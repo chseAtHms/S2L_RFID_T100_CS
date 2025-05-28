@@ -47,6 +47,8 @@
 #define RFID_REC_OK           0u
 #define RFID_REC_INVALID_LEN  1u
 #define RFID_REC_INVALID_RES  2u
+#define RFID_REC_SEQ_NUM_ERROR  4u
+#define RFID_REC_CRC_ERROR     3u
 
 
 typedef enum {
@@ -81,6 +83,9 @@ typedef struct {
   UINT8 au8_s2l_id[RFID_S2L_ID_LEN];      /* S2L ID */
   UINT8 au8_r_crc[RFID_RECORD_CRC_LEN];   /* Record CRC */
 } t_RFID_TAG_DATA;
+
+
+
 
 /**************************************************************************************************    
 **   global variables    

@@ -145,8 +145,8 @@ STATIC void RFID_FrameTxReadRecord_0(void);
 STATIC void RFID_FrameTxReadRecord_1(void);
 
 /* RFID Response verification  */
-STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
 STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer);
+STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
 STATIC UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
 STATIC UINT8 RFID_VerifyChecksum(const UINT8 *buffer , UINT8 length);
 STATIC UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length);
@@ -245,7 +245,7 @@ void RFID_Process(void)
     {
       t_RFID_RAW_DATA s_rfidRawData;
       t_RFID_TAG_DATA s_rfidTagData;
-      //t_RFID_TAG_DATA s_rfidTagRecordOdd;
+      t_RFID_TAG_DATA s_rfidTagRecordOdd;
       // Read Tag Fix Code 
       RFID_FrameTxSingleReadFixCode();
       RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
@@ -254,6 +254,12 @@ void RFID_Process(void)
       if( RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
       {
          RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
+      }
+      /* Copy Fix Code */
+      UINT8 i;
+      for (i = 0; i < RFID_UID_LEN; i++)
+      {
+        s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
       }
 
       // Read even record 
@@ -266,7 +272,7 @@ void RFID_Process(void)
       } 
       RFID_CalculateCRC(&s_rfidTagData);
         //e_rfidAccessState = WF_RX_READ_RECORD_1;
-      /* 
+       
       // Read odd record
       RFID_FrameTxReadRecord_1();
       RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
@@ -276,7 +282,7 @@ void RFID_Process(void)
       {
         RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordOdd);
       }
-      RFID_CalculateCRC(&s_rfidTagRecordOdd); */
+      RFID_CalculateCRC(&s_rfidTagRecordOdd);
       
       break;
     }
@@ -287,6 +293,136 @@ void RFID_Process(void)
   }
 }
 
+/**************************************************************************************************
+**    static functions
+**************************************************************************************************/
+/**************************************************************************************************
+**
+**  Function:
+**    void RFID_VerifySWVersion(void)
+**
+**  Description:
+**    This function verifies the software version of the RFID reader.
+**
+**  See also:
+**    -
+**  Parameters:
+**    buffer (IN) - Pointer to the buffer containing the response from the RFID reader
+**
+**  Return value:
+**    RFID_OK (0) - Response is OK
+**    RFID_SYNTAX_ERROR (4) - Syntax error
+**    RFID_CHCK_ERROR (3) - Checksum error
+*****************************************************************************************************/
+STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer)
+{
+  // Search for ETX in the buffer
+  UINT8 msg_len = RFID_ResLength(buffer, RFID_EXPEC_RES_VE_LEN);
+  // Copy buffer to temporary working buffer
+
+  UINT8 i;
+  for (i = 0; i < RFID_EXPEC_RES_VE_LEN; i++)
+  {
+    au8_rfidRxBuffer[i] = buffer[i];
+  }
+  if (msg_len < 3)
+  {
+    return RFID_SYNTAX_ERROR;
+  }
+
+  // Check the checksum
+  UINT8 receivedChecksum = au8_rfidRxBuffer[RFID_EXPEC_RES_VE_LEN - 2];
+  UINT8 calculatedChecksum = RFID_CalculateChecksum(au8_rfidRxBuffer, RFID_EXPEC_RES_VE_LEN - 2);
+  if (receivedChecksum != calculatedChecksum)
+  {
+    return RFID_CHCK_ERROR;
+  } 
+
+  return RFID_OK;
+}
+
+/**************************************************************************************************
+**
+**  Function:
+**    UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer)
+**
+**  Description:
+**    This function verifies the received Single Read Fix Code message and stores the data
+**    in the raw data structure to prevent overwriting of the DMA buffer.
+**    It checks the checksum and the length of the message.
+** 
+**  See also:
+**    -
+**
+**  Parameters:
+**    buffer (IN) - Pointer to the received dma buffer
+**
+**  Return value:
+**    RFID_OK (0) - Response is OK
+**    RFID_CHCK_ERROR (3) - Checksum error
+**    RFID_SYNTAX_ERROR (4) - Syntax error
+**************************************************************************************************/
+STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData)
+{
+  // Copy buffer to temporary working buffer to prevent overwriting of DMA buffer
+  UINT8 i; 
+  for (i = 0; i < RFID_EXPEC_RES_SF_LEN; i++)
+  {
+    au8_rfidRxBuffer[i] = buffer[i];
+  }
+  /* Calculate the received message length */ 
+  UINT8 msg_len = RFID_ResLength(au8_rfidRxBuffer, RFID_EXPEC_RES_SF_LEN); 
+  if (msg_len < 3)
+  {
+    return RFID_SYNTAX_ERROR;
+  } 
+  // Check the checksum
+  RFID_VerifyChecksum(au8_rfidRxBuffer, msg_len); 
+
+ 
+   // Fill raw data structure
+  s_rfidRawData->u8_status = au8_rfidRxBuffer[0];
+  s_rfidRawData->u8_CHCK = au8_rfidRxBuffer[msg_len - 2];
+  s_rfidRawData->u8_ETX = au8_rfidRxBuffer[msg_len - 1];
+  s_rfidRawData->u8_len = msg_len - 3; // Exclude status, checksum and ETX
+
+  // Copy the actual data bytes (between <Status> and <CHCK>)
+  for (i = 0; i < RFID_RAW_MAX_LEN; i++)
+  {
+    if (i < s_rfidRawData->u8_len)
+    {
+      s_rfidRawData->au8_data[i] = au8_rfidRxBuffer[i + 1];
+    }
+    else
+    {
+      s_rfidRawData->au8_data[i] = 0xFF; // Fill with 0xFF if no data available
+    }
+  }  
+
+  return RFID_OK;
+}
+
+/**************************************************************************************************
+**
+**  Function:
+**    UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData)
+**
+**  Description:
+**    This function verifies the response of the command  Single Read Word, 
+**    and stores the data in the raw data structure to prevent overwriting of the DMA buffer.
+**    It checks the checksum and the length of the message.
+**
+**  See also:
+**    -
+**  Parameters:
+**    buffer (IN) - Pointer to the buffer containing the response from the RFID reader
+**    s_rfidRawData (OUT) - Pointer to the raw data structure where the parsed data will be stored
+**
+**  Return value:
+**    RFID_OK (0) - Response is OK
+**    RFID_SYNTAX_ERROR (4) - Syntax error
+**    RFID_CHCK_ERROR (3) - Checksum error
+*****************************************************************************************************/
 STATIC UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData)
 {
   // Copy buffer to temporary working buffer to prevent overwriting of DMA buffer
@@ -337,33 +473,111 @@ STATIC UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_r
   return RFID_OK;
 }
 
-STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer)
+/**************************************************************************************************
+**
+**  Function:
+**    UINT8 RFID_VerifyChecksum(const UINT8 *buffer, UINT8 length)
+**
+**  Description:
+**    This function verifies the checksum of the received data. It compares the received checksum
+**    with the calculated checksum. The checksum is calculated from the data bytes, excluding the
+**    <CHCK> and <ETX> bytes.
+**
+**  See also:
+**    -
+**  Parameters:
+**    buffer (IN) - Pointer to the buffer containing the received data
+**    length (IN) - Length of the received data
+**
+**  Return value:
+**    RFID_OK (0) - Checksum is valid
+**    RFID_CHCK_ERROR (3) - Checksum is invalid
+**************************************************************************************************/
+STATIC UINT8 RFID_VerifyChecksum(const UINT8 *buffer, UINT8 length)
 {
-  // Search for ETX in the buffer
-  UINT8 msg_len = RFID_ResLength(buffer, RFID_EXPEC_RES_VE_LEN);
-  // Copy buffer to temporary working buffer
+  UINT8 receivedChecksum = buffer[length - 2];
+  UINT8 calculatedChecksum = RFID_CalculateChecksum(buffer, length - 2);
 
+  return (receivedChecksum == calculatedChecksum) ? RFID_OK : RFID_CHCK_ERROR;
+}
+
+ /**************************************************************************************************
+ **
+ **  Function:
+  **    UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length)
+ **
+ **  Description:
+ **    This function calculates the checksum of the given data. The checksum is calculated from 
+ **    <Status> and <Date> bytes, excluding <CHCK> and <ETX>.
+ **
+ **  See also:
+ **    -
+ **  Parameters:
+ **    data (IN)   - Pointer to the data
+ **    length (IN) - Length of the data
+ **
+ **  Return value:
+ **    checksum (OUT) - Checksum of the data
+ **************************************************************************************************/
+STATIC UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length)
+{
+  UINT32 checksum = 0;
   UINT8 i;
-  for (i = 0; i < RFID_EXPEC_RES_VE_LEN; i++)
+  for (i = 0; i < length; i++)
   {
-    au8_rfidRxBuffer[i] = buffer[i];
+    checksum += data[i];
   }
-  if (msg_len < 3)
+  return (UINT8)(checksum % 256);
+}
+
+/* **************************************************************************************************
+**
+**  Function:
+**    UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData)
+**
+**  Description:
+**    This function parses the Single Read Fix Code message, from the rfid raw data structure.
+**    It extracts the tag UID.
+**
+**  See also:
+**    -
+**  Parameters:
+**    s_rfidRawData (IN) - Pointer to the raw data structure containing the received data
+**    s_rfidTagData (OUT) - Pointer to the tag data structure where the parsed data will be stored
+**
+**  Return value:
+**    RFID_OK (0) - Response is OK
+**    RFID_SYNTAX_ERROR (4) - Syntax error
+**
+**************************************************************************************************/
+STATIC UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData)
+{
+  // Verify the length of the record
+  if (s_rfidRawData->u8_len != RFID_UID_LEN)
   {
     return RFID_SYNTAX_ERROR;
   }
 
-  // Check the checksum
-  UINT8 receivedChecksum = au8_rfidRxBuffer[RFID_EXPEC_RES_VE_LEN - 2];
-  UINT8 calculatedChecksum = RFID_CalculateChecksum(au8_rfidRxBuffer, RFID_EXPEC_RES_VE_LEN - 2);
-  if (receivedChecksum != calculatedChecksum)
+  // Extract the tag UID
+  
+  UINT8 i;
+  for (i = 0; i < RFID_UID_LEN; i++)
   {
-    return RFID_CHCK_ERROR;
+    s_rfidTagData->au8_tag_uid[i] = s_rfidRawData->au8_data[i];
+  }
+  
+  // Clear raw data structure
+  s_rfidRawData->u8_status = 0xFF;
+  s_rfidRawData->u8_CHCK = 0xFF;
+  s_rfidRawData->u8_ETX = 0xFF; 
+  s_rfidRawData->u8_len = 0xFF;
+  
+  for (i = 0; i < RFID_RAW_MAX_LEN; i++)
+  {
+    s_rfidRawData->au8_data[i] = 0xFF; // Fill with 0xFF
   } 
-
   return RFID_OK;
 }
-
 
 /**************************************************************************************************
 **
@@ -433,54 +647,7 @@ STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData)
 }
 
 
-/* **************************************************************************************************
-**
-**  Function:
-**    UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData)
-**
-**  Description:
-**    This function parses the Single Read Fix Code message, from the rfid raw data structure.
-**    It extracts the tag UID.
-**
-**  See also:
-**    -
-**  Parameters:
-**    s_rfidRawData (IN) - Pointer to the raw data structure containing the received data
-**    s_rfidTagData (OUT) - Pointer to the tag data structure where the parsed data will be stored
-**
-**  Return value:
-**    RFID_OK (0) - Response is OK
-**    RFID_SYNTAX_ERROR (4) - Syntax error
-**
-**************************************************************************************************/
-STATIC UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData)
-{
-  // Verify the length of the record
-  if (s_rfidRawData->u8_len != RFID_UID_LEN)
-  {
-    return RFID_SYNTAX_ERROR;
-  }
 
-  // Extract the tag UID
-  
-  UINT8 i;
-  for (i = 0; i < RFID_UID_LEN; i++)
-  {
-    s_rfidTagData->au8_tag_uid[i] = s_rfidRawData->au8_data[i];
-  }
-  
-  // Clear raw data structure
-  s_rfidRawData->u8_status = 0xFF;
-  s_rfidRawData->u8_CHCK = 0xFF;
-  s_rfidRawData->u8_ETX = 0xFF; 
-  s_rfidRawData->u8_len = 0xFF;
-  
-  for (i = 0; i < RFID_RAW_MAX_LEN; i++)
-  {
-    s_rfidRawData->au8_data[i] = 0xFF; // Fill with 0xFF
-  } 
-  return RFID_OK;
-}
 
 /**************************************************************************************************
 **
@@ -534,71 +701,8 @@ STATIC UINT8 RFID_ParseRecord(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s
 }
 
 
-/**************************************************************************************************
-**
-**  Function:
-**    UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer)
-**
-**  Description:
-**    This function verifies the received Single Read Fix Code message.
-**    It checks the checksum and the length of the message.
-** 
-**  See also:
-**    -
-**
-**  Parameters:
-**    buffer (IN) - Pointer to the received dma buffer
-**
-**  Return value:
-**    RFID_OK (0) - Response is OK
-**    RFID_CHCK_ERROR (3) - Checksum error
-**    RFID_SYNTAX_ERROR (4) - Syntax error
-**    RFID_NO_TAG (5) - No tag in range
-**    RFID_TOO_SHORT (6) - Tag is too short
-**    RFID_UNKNOWN_ERROR (7) - Unknown error
-**************************************************************************************************/
-STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData)
-{
-  // Copy buffer to temporary working buffer to prevent overwriting of DMA buffer
-  UINT8 i; 
-  for (i = 0; i < RFID_EXPEC_RES_SF_LEN; i++)
-  {
-    au8_rfidRxBuffer[i] = buffer[i];
-  }
-  /* Calculate the received message length */ 
-  UINT8 msg_len = RFID_ResLength(au8_rfidRxBuffer, RFID_EXPEC_RES_SF_LEN); 
-  if (msg_len < 3)
-  {
-    return RFID_SYNTAX_ERROR;
-  } 
-  // Check the checksum
-  RFID_VerifyChecksum(au8_rfidRxBuffer, msg_len); 
-
  
-   // Fill raw data structure
-  s_rfidRawData->u8_status = au8_rfidRxBuffer[0];
-  s_rfidRawData->u8_CHCK = au8_rfidRxBuffer[msg_len - 2];
-  s_rfidRawData->u8_ETX = au8_rfidRxBuffer[msg_len - 1];
-  s_rfidRawData->u8_len = msg_len - 3; // Exclude status, checksum and ETX
 
-  // Copy the actual data bytes (between <Status> and <CHCK>)
-  for (i = 0; i < RFID_RAW_MAX_LEN; i++)
-  {
-    if (i < s_rfidRawData->u8_len)
-    {
-      s_rfidRawData->au8_data[i] = au8_rfidRxBuffer[i + 1];
-    }
-    else
-    {
-      s_rfidRawData->au8_data[i] = 0xFF; // Fill with 0xFF if no data available
-    }
-  }  
-
-  return RFID_OK;
-} 
- /**************************************************************************************************
- **    static functions
- **************************************************************************************************/
 STATIC size_t RFID_ResLength(const UINT8 *buffer, size_t maxLength)
 {
   for (size_t i = 0; i < maxLength; i++)
@@ -609,43 +713,6 @@ STATIC size_t RFID_ResLength(const UINT8 *buffer, size_t maxLength)
     } 
   }
   return 0; // No ETX found
-}
-
- /**************************************************************************************************
- **
- **  Function:
-  **    UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length)
- **
- **  Description:
- **    This function calculates the checksum of the given data. The checksum is calculated from 
- **    <Status> and <Date> bytes, excluding <CHCK> and <ETX>.
- **
- **  See also:
- **    -
- **  Parameters:
- **    data (IN)   - Pointer to the data
- **    length (IN) - Length of the data
- **
- **  Return value:
- **    checksum (OUT) - Checksum of the data
- **************************************************************************************************/
-STATIC UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length)
-{
-  UINT32 checksum = 0;
-  UINT8 i;
-  for (i = 0; i < length; i++)
-  {
-    checksum += data[i];
-  }
-  return (UINT8)(checksum % 256);
-}
-
-STATIC UINT8 RFID_VerifyChecksum(const UINT8 *buffer, UINT8 length)
-{
-  UINT8 receivedChecksum = buffer[length - 2];
-  UINT8 calculatedChecksum = RFID_CalculateChecksum(buffer, length - 2);
-
-  return (receivedChecksum == calculatedChecksum) ? RFID_OK : RFID_CHCK_ERROR;
 }
 
 void delay_ms(uint32_t ms)
@@ -1042,7 +1109,7 @@ STATIC UINT32 CRC32(const UINT8 * data, UINT8 length)
  UINT8 j;
  for (i = 0; i< length; i++)
  {
-    crc ^= (UINT32)data[i] << 24; 
+    crc ^= (UINT32)data[i] << 24;
     for (j = 0; j <  8; j++) 
     {
       if (crc & 0x80000000)

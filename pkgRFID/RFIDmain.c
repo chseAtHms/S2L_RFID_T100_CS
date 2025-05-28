@@ -58,6 +58,7 @@
 
 #define RFID_OK 0
 #define RFID_POWER_ON_NOTIFICATION 2
+#define RFID_TIMEOUT_ERROR 1
 #define RFID_SYNTAX_ERROR 4 
 #define RFID_CHCK_ERROR 3
 #define RFID_NO_TAG 5 
@@ -137,28 +138,33 @@ t_RFID_ACCESS_STATE e_rfidAccessState;
 /**************************************************************************************************
 **    static function prototypes
 **************************************************************************************************/
+/* RFID Commands */
 STATIC void RFID_BootReader(void);
 STATIC void RFID_FrameTxSingleReadFixCode(void);
 STATIC void RFID_FrameTxReadRecord_0(void);
-STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
-STATIC void RFID_FrameRxInit(UINT8 u8_len);
+STATIC void RFID_FrameTxReadRecord_1(void);
+
+/* RFID Response verification  */
+STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
+STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer);
+STATIC UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
+STATIC UINT8 RFID_VerifyChecksum(const UINT8 *buffer , UINT8 length);
+STATIC UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length);
+/* Tag data verification */
+STATIC UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData);
+STATIC UINT8 RFID_ParseRecord(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData);
+STATIC size_t RFID_ResLength(const UINT8 *buffer, size_t maxLength);
+STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData);
+/* Utility functions */
 STATIC void uartInit(void);
 STATIC void uartInitDmaTx(void);
 STATIC void uartInitDmaRx(void);
+STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
+STATIC void RFID_FrameRxInit(UINT8 u8_len);
 STATIC void timerStart(t_TIME *ps_timer);
 STATIC void timerStop(t_TIME *ps_timer);
 STATIC UINT32 CRC32(const UINT8* data, UINT8 length);
 
-STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
-STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer);
-STATIC UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData);
-STATIC size_t RFID_ResLength(const UINT8 *buffer, size_t maxLength);
-STATIC UINT8 RFID_VerifyChecksum(const UINT8 *buffer , UINT8 length);
-STATIC UINT8 RFID_CalculateChecksum(const UINT8 * data, size_t length);
-STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData);
-
-STATIC UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData);
-STATIC UINT8 RFID_ParseRecord(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData);
 /**************************************************************************************************
 **    global functions
 **************************************************************************************************/
@@ -239,7 +245,8 @@ void RFID_Process(void)
     {
       t_RFID_RAW_DATA s_rfidRawData;
       t_RFID_TAG_DATA s_rfidTagData;
-      // Read Fix Code 
+      //t_RFID_TAG_DATA s_rfidTagRecordOdd;
+      // Read Tag Fix Code 
       RFID_FrameTxSingleReadFixCode();
       RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
       
@@ -249,20 +256,28 @@ void RFID_Process(void)
          RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
       }
 
-
-
-      // Read Record
+      // Read even record 
       RFID_FrameTxReadRecord_0();
       RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
-
 
       if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
       { 
         RFID_ParseRecord(&s_rfidRawData, &s_rfidTagData);
       } 
-
       RFID_CalculateCRC(&s_rfidTagData);
         //e_rfidAccessState = WF_RX_READ_RECORD_1;
+      /* 
+      // Read odd record
+      RFID_FrameTxReadRecord_1();
+      RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
+
+      // Verify the received Single Read Word message
+      if(RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+      {
+        RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordOdd);
+      }
+      RFID_CalculateCRC(&s_rfidTagRecordOdd); */
+      
       break;
     }
     default:
@@ -368,37 +383,53 @@ STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer)
 **
 **************************************************************************************************/
 STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData)
-{
-  UINT8 au8_reserved[RFID_RES_LEN] = {0x00, 0x00, 0x00}; // Reserved bytes
-  // UINT32 sys_auth_key = todo later as safe configuration parameter
+{       
+  UINT32 u32_receivedCRC = 0x00000000;
+  u32_receivedCRC |= (UINT32)s_rfidTagData->au8_r_crc[0] << 24;
+  u32_receivedCRC |= (UINT32)s_rfidTagData->au8_r_crc[1] << 16;
+  u32_receivedCRC |= (UINT32)s_rfidTagData->au8_r_crc[2] << 8;
+  u32_receivedCRC |= (UINT32)s_rfidTagData->au8_r_crc[3];
 
+  // Prepare the input data for CRC calculation
+  UINT8 au8_reserved[RFID_RES_LEN] = {0x00, 0x00, 0x00}; // Reserved bytes
+  /* UINT32 sys_auth_key = todo later as safe configuration parameter */
   UINT8 au8_crc_input[RFID_UID_LEN + RFID_SEQ_NUM_LEN + RFID_RES_LEN + RFID_S2L_ID_LEN];
   UINT8 offset = 0;
   UINT8 i;
 
-  // 1. UID
+  /* 1. UID */
   for (i = 0; i < RFID_UID_LEN; i++)
   {
     au8_crc_input[offset++] = s_rfidTagData->au8_tag_uid[i];
     //au8_crc_input[offset++] = s_rfidTagData->au8_tag_uid[RFID_UID_LEN - 1 - i]; // Reverse order
   }
 
-  // 2. Sequence number
+  /* 2. Sequence number */
   au8_crc_input[offset++] = s_rfidTagData->u8_seq_num;
 
-  // 3. Reserved bytes (3 bytes 0x00)
+  /* 3. Reserved bytes (3 bytes 0x00) */
   for (i = 0; i < RFID_RES_LEN; i++)
   {
     au8_crc_input[offset++] = au8_reserved[i];
   }
 
-  // 4. S2L ID (4 bytes)
+  /* 4. S2L ID (4 bytes) */
   for (i = 0; i < RFID_S2L_ID_LEN; i++)
   {
     au8_crc_input[offset++] = s_rfidTagData->au8_s2l_id[i];
   }
 
-  return CRC32(au8_crc_input, offset);
+  /* Calculate CRC and compare with received CRC */
+  if (CRC32(au8_crc_input, offset) == u32_receivedCRC)
+  {
+   /* CRC is valid, proceed with the tag data */
+   return RFID_OK;
+  }
+  else
+  {
+    /* CRC error, handle accordingly */
+    return RFID_REC_CRC_ERROR;
+  }
 }
 
 
@@ -692,7 +723,23 @@ void delay_ms(uint32_t ms)
    RFID_FrameTxTrigger(RFID_CMD_SF_LEN);
  }
 
-
+/**************************************************************************************************
+**
+** Function:
+**   void RFID_FrameTxReadRecord_0(void)
+**
+** Description:
+**   This function sends the Single Read Words command to read the first record from the 
+**   preprogrammed RFID tag memory. The command is used to read 3 words with a start address of 
+**   record 0 (0x000000 (ASCII 0x30)).
+** 
+** See also:
+**   -
+** Parameters:
+**   -
+** Return value:
+**   -
+**************************************************************************************************/
  STATIC void RFID_FrameTxReadRecord_0(void)
  {
    /* Currenly one records -> 3 words*/
@@ -714,6 +761,45 @@ void delay_ms(uint32_t ms)
    RFID_FrameTxTrigger(RFID_CMD_SR_LEN);
  }
 
+/**************************************************************************************************
+**
+** Function:
+**   void RFID_FrameTxReadRecord_1(void)
+**
+** Description:
+**   This function sends the Single Read Words command to read the second record from the
+**   preprogrammed RFID tag memory. The command is used to read 3 words with a start address of
+**   record 1 (0x000003 (ASCII 0x33)).
+**
+** See also:
+**   -
+** Parameters:
+**   -
+** Return value:
+**   -
+**************************************************************************************************/
+ STATIC void RFID_FrameTxReadRecord_1(void)
+ {
+   /* Currenly one records -> 3 words*/
+   /* Single Read Words command */
+   au8_rfidDmaBufferTx[0] = 0x53;
+   au8_rfidDmaBufferTx[1] = 0x52;
+   /* Word address */
+   au8_rfidDmaBufferTx[2] = 0x30; 
+   au8_rfidDmaBufferTx[3] = 0x30; 
+   au8_rfidDmaBufferTx[4] = 0x30; 
+   au8_rfidDmaBufferTx[5] = 0x33; 
+   /* Number of words */
+   au8_rfidDmaBufferTx[6] = 0x30;
+   au8_rfidDmaBufferTx[7] = 0x33;
+   /* CHECKSUM */
+   au8_rfidDmaBufferTx[8] = 0xCB; 
+   /* ETX */
+   au8_rfidDmaBufferTx[9] = 0x03;
+
+   /* Send the frame */
+   RFID_FrameTxTrigger(RFID_CMD_SR_LEN);
+ }
  /**************************************************************************************************
  **
  **  Function:
@@ -745,11 +831,6 @@ void delay_ms(uint32_t ms)
 
    /* Enable DMA channel 4 */
    RFID_DMA_CHANNEL_TX->CCR |= DMA_CCR1_EN; /* TX */
-
-  // Warten, bis DMA Transfer fertig (Kanal 4 = TX)
-    //while (!(DMA1->ISR & DMA_ISR_TCIF4)) {}
-    //DMA1->IFCR |= DMA_IFCR_CTCIF4;
-
  }
 
  /**************************************************************************************************
@@ -961,8 +1042,7 @@ STATIC UINT32 CRC32(const UINT8 * data, UINT8 length)
  UINT8 j;
  for (i = 0; i< length; i++)
  {
-    crc ^= (UINT32)data[i] << 24;
-  
+    crc ^= (UINT32)data[i] << 24; 
     for (j = 0; j <  8; j++) 
     {
       if (crc & 0x80000000)

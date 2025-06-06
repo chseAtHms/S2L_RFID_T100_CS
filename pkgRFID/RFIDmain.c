@@ -86,20 +86,20 @@
 #define CRC_SEED 0xFFFFFFFF
 #define CRC_XOROUT 0xFFFFFFFF
 
-UINT8 au8_rfidRxBuffer[90];
-UINT8 u8_frameTriggerCount = 0u;
+UINT8 au8_rfidRxBuffer[75];
+UINT8 au8_rfidRxDMAFinished[5];
 
 
 
 //t_RFID_TAG_DATA s_rfidTagData;
 
-typedef struct {
+/* typedef struct {
   UINT8 u8_status;
   UINT8 u8_data[RFID_MAX_LEN];
   UINT8 u8_CHCK;
   UINT8 u8_ETX;
   UINT8 u8_len;
-} t_RFID_DATA;
+} t_RFID_DATA; */
 
 
 typedef struct
@@ -131,13 +131,22 @@ UINT8 au8_rfidDmaBufferTx[255] __attribute__((section("DMA_BUFFER_SECTION")));
 UINT8 au8_rfidDmaBufferRx[255] __attribute__((section("DMA_BUFFER_SECTION")));
 
 /* RFID reader access state */
-t_RFID_ACCESS_STATE e_rfidAccessState;
+
+t_RFID_TAG_READ_STATE e_rfidAccessState;
+
+UINT8 verifyResult = RFID_OK;
+
+// Counter for function calls
+UINT32 u32_rfidFunctionCallCounter = 0;
 
 /* RFID information */
 
 /**************************************************************************************************
 **    static function prototypes
 **************************************************************************************************/
+
+
+
 /* RFID Commands */
 STATIC void RFID_BootReader(void);
 STATIC void RFID_FrameTxSingleReadFixCode(void);
@@ -196,14 +205,14 @@ void RFID_Init(void)
 
     uartInitDmaTx();
     uartInitDmaRx();
-    e_rfidAccessState = WF_RX_READ_RECORD_0;
+    e_rfidAccessState = TX_BOOT_FIRMWARE;
   }
 }
 
 /**************************************************************************************************
 **
 **  Function:
-**    void RFID_Process(void)
+**    void RFID_Reader_Boot(void)
 **
 **  Description:
 **    This function processes the RFID reader.
@@ -217,75 +226,117 @@ void RFID_Init(void)
 **  Return value:
 **    -
 **************************************************************************************************/
-void RFID_Process(void)
+void RFID_Reader_Boot(void)
 {
+
   switch (e_rfidAccessState)
   {
-    case WF_TX_BOOT_FIRMWARE:
+    case TX_BOOT_FIRMWARE:    
     {
+       
       RFID_BootReader();
       RFID_FrameRxInit(RFID_EXPEC_RES_VE_LEN);
-      //e_rfidAccessState = WF_RX_BOOT_FIRMWARE;
-      if (RFID_VerifySWVersion(au8_rfidDmaBufferRx) == RFID_OK)
-      {
-        e_rfidAccessState = WF_RX_READ_RECORD_0;
-      }
-      else
-      {
-        // Retry
-        e_rfidAccessState = WF_RX_READ_RECORD_0;
-      }
+      e_rfidAccessState = RX_BOOT_FIRMWARE;
       break;
     }
-    case WF_RX_BOOT_FIRMWARE:
-    {
-      break;
-    }  
-    case WF_RX_READ_RECORD_0:
-    {
-      t_RFID_RAW_DATA s_rfidRawData;
-      t_RFID_TAG_DATA s_rfidTagData;
-      t_RFID_TAG_DATA s_rfidTagRecordOdd;
-      // Read Tag Fix Code 
-      RFID_FrameTxSingleReadFixCode();
-      RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
+    case RX_BOOT_FIRMWARE:
+    { 
+      // Wait for the DMA transfer to complete
+      if (RFID_DMA_CHANNEL_RX->CNDTR == 0)
+      {
+        if (RFID_VerifySWVersion(au8_rfidDmaBufferRx) == RFID_OK)
+        {
+          e_rfidAccessState = TX_READ_UID;
+        }
+        else
+        {
+          // Retry
+          e_rfidAccessState = STATE_FAILURE; 
+        }
+      }
+      break; 
+    }
+    // case STATE_READ_UID:
+    // {
+    //   if (!b_rfidStateInitialized)
+    //   {
+    //     RFID_FrameTxSingleReadFixCode();
+    //     RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
+    //     b_rfidStateInitialized = 1;
+    //   }
+    //   // Verify the received Single Read Fix Code message
+    //   if( RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+    //   {
+    //      RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
+    //     /* Copy Fix Code */
+    //     UINT8 i;
+    //     for (i = 0; i < RFID_UID_LEN; i++)
+    //     {
+    //       s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+    //     }
+    //     e_rfidAccessState = STATE_READ_REC_EVEN;
+    //     b_rfidStateInitialized = 0; // Reset state initialization flag
+    //   }
+    //   break;
+    // }  
+    // case WF_RX_READ_RECORD_0:
+    // {
+    //   t_RFID_RAW_DATA s_rfidRawData;
+    //   t_RFID_TAG_DATA s_rfidTagData;
+    //   t_RFID_TAG_DATA s_rfidTagRecordOdd;
+    //   // Read Tag Fix Code 
+    //   RFID_FrameTxSingleReadFixCode();
+    //   RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
       
-      // Verify the received Single Read Fix Code message
-      if( RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
-      {
-         RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
-      }
-      /* Copy Fix Code */
-      UINT8 i;
-      for (i = 0; i < RFID_UID_LEN; i++)
-      {
-        s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
-      }
+    //   // Verify the received Single Read Fix Code message
+    //   if( RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+    //   {
+    //      RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
+    //   }
+    //   /* Copy Fix Code */
+    //   UINT8 i;
+    //   for (i = 0; i < RFID_UID_LEN; i++)
+    //   {
+    //     s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+    //   }
 
-      // Read even record 
-      RFID_FrameTxReadRecord_0();
-      RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
+    //   // Read even record 
+    //   RFID_FrameTxReadRecord_0();
+    //   RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
 
-      if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
-      { 
-        RFID_ParseRecord(&s_rfidRawData, &s_rfidTagData);
-      } 
-      RFID_CalculateCRC(&s_rfidTagData);
-        //e_rfidAccessState = WF_RX_READ_RECORD_1;
+    //   if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+    //   { 
+    //     RFID_ParseRecord(&s_rfidRawData, &s_rfidTagData);
+    //   } 
+    //   if (RFID_CalculateCRC(&s_rfidTagData) == RFID_OK)
+    //   {
+    //     //e_rfidAccessState = WF_RX_READ_RECORD_1;
+    //   }
+    //   else
+    //   {
+    //     e_rfidAccessState = RFID_FAILURE;
+    //   }
        
-      // Read odd record
-      RFID_FrameTxReadRecord_1();
-      RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
+    //   // Read odd record
+    //   RFID_FrameTxReadRecord_1();
+    //   RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
 
-      // Verify the received Single Read Word message
-      if(RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
-      {
-        RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordOdd);
-      }
-      RFID_CalculateCRC(&s_rfidTagRecordOdd);
-      
-      break;
-    }
+    //   // Verify the received Single Read Word message
+    //   if(RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+    //   {
+    //     RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordOdd);
+    //   }
+    //   if ( RFID_CalculateCRC(&s_rfidTagRecordOdd) == RFID_OK )
+    //   {
+    //     // Good CRC, now we can compare the records
+
+    //   }
+    //   else
+    //   {
+    //     e_rfidAccessState = RFID_FAILURE;
+    //   }  
+    //   break;
+    //}
     default:
     {
       break;
@@ -294,8 +345,203 @@ void RFID_Process(void)
 }
 
 /**************************************************************************************************
+**
+**  Function:
+**    void RFID_ReadTag(void)
+**
+**  Description:
+**    This function implements the state machine for reading the RFID tag.
+**
+**  See also:
+**    -
+**  Parameters:
+**    -
+**  Return value:
+**    RFID_OK (0) - Response is OK
+**************************************************************************************************/
+ void RFID_ReadTag(void)
+ {
+
+   t_RFID_RAW_DATA s_rfidRawData;
+   t_RFID_TAG_DATA s_rfidTagData;
+   t_RFID_TAG_DATA s_rfidTagRecordEven;
+   t_RFID_TAG_DATA s_rfidTagRecordOdd;
+
+   switch (e_rfidAccessState)
+   {
+     case TX_READ_UID:
+     {
+        RFID_FrameTxSingleReadFixCode();
+        RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
+        e_rfidAccessState = RX_READ_UID;
+        break;
+     }
+     case RX_READ_UID:
+     {
+        u32_rfidFunctionCallCounter++;
+        if (RFID_DMA_CHANNEL_RX->CNDTR == 0) 
+        {
+          // Verify the received Single Read Fix Code message
+          verifyResult = RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData);
+          if( verifyResult == RFID_OK)
+          {
+              RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
+            /* Copy Fix Code and store it in both records for R_CRC calculation */
+            UINT8 i;
+            for (i = 0; i < RFID_UID_LEN; i++)
+            {
+              s_rfidTagRecordEven.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+              s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+            }
+            e_rfidAccessState = STATE_SUCCESS; // Change state to success
+          }
+          else
+          {
+              // Handle error
+              e_rfidAccessState = STATE_FAILURE_UID;
+          }
+        }
+      break;
+     }
+     case STATE_READ_REC_EVEN: 
+     {  
+      // if (!b_rfidStateInitialized)
+      // {
+      //   RFID_FrameTxReadRecord_0();
+      //   RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
+      //   b_rfidStateInitialized = 1;
+      // }
+
+      // if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+      // { 
+      //   if (RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordEven) == RFID_OK)
+      //   {
+      //     e_rfidAccessState = STATE_CHECK_REC_EVEN;
+      //     b_rfidStateInitialized = 0; 
+      //   }
+      //   else
+      //   {
+      //     e_rfidAccessState = STATE_FAILURE;
+      //     b_rfidStateInitialized = 0; 
+      //   }
+      // } 
+      // else
+      // {
+      //   e_rfidAccessState = STATE_FAILURE;
+      //   b_rfidStateInitialized = 0;
+      // }     
+      // break;
+     }
+     default:
+     {
+       // Handle other states or errors
+       break;
+     }
+    }  
+
+//   t_RFID_RAW_DATA s_rfidRawData;
+//   t_RFID_TAG_DATA s_rfidTagRecordEven;
+//   t_RFID_TAG_DATA s_rfidTagRecordOdd;
+
+//   switch(state)
+//     case STATE_INIT:
+//     {
+//       e_rfidTagReadState = STATE_READ_UID;
+//       break;
+//     }
+//     case STATE_READ_UID:
+//     {
+//       // Read Tag UID 
+//       RFID_FrameTxSingleReadFixCode();
+//       RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
+      
+//       // Verify the received Single Read Fix Code message
+//       if( RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+//       {
+//         RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
+//         /* Copy Fix Code */
+//         UINT8 i;
+//         for (i = 0; i < RFID_UID_LEN; i++)
+//         {
+//          s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+//         }
+//         e_rfidTagReadState = STATE_READ_REC_EVEN;
+//       }
+//       else
+//       {
+//         // Handle error
+//         e_rfidTagReadState = STATE_FAILURE;
+//       }
+//       break;
+//     }
+//     case STATE_READ_REC_EVEN:
+//     {
+//       RFID_FrameTxReadRecord_0();
+//       RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
+
+//       if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+//       { 
+//         RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordEven);
+//         e_rfidTagReadState = STATE_CHECK_REC_EVEN;
+//       } 
+//       else
+//       {
+//         // Handle error
+//         e_rfidTagReadState = STATE_FAILURE;
+//       }
+//       break;
+//     }
+//     case STATE_CHECK_REC_EVEN:
+//     {
+//       if (RFID_CalculateCRC(&s_rfidTagRecordEven) == RFID_OK)
+//       {
+//         e_rfidTagReadState = STATE_READ_REC_ODD;
+//       }
+//       else
+//       {
+//         e_rfidTagReadState = STATE_FAILURE;
+//       }
+//       break;
+//     }
+//     case STATE_READ_REC_ODD:
+//     {
+//       // Read odd record 
+
+
+//       RFID_FrameTxReadRecord_1();
+//       RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
+
+//       // Verify the received Single Read Word message
+//       if(RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
+//       {
+//         RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordOdd);
+//         e_rfidTagReadState = STATE_CHECK_REC_ODD;
+//       }
+//       else
+//       {
+//         // Handle error
+//         e_rfidTagReadState = STATE_FAILURE;
+//       }
+//       break;
+//     }
+//     case STATE_CHECK_REC_ODD:
+//     {
+//       if ( RFID_CalculateCRC(&s_rfidTagRecordOdd) == RFID_OK )
+//       {
+//         e_rfidTagReadState = STATE_CHECK_TAG;
+//       }
+//       else
+//       {
+//         e_rfidAccessState = RFID_FAILURE;
+//       }
+//       break;
+//     }
+  }
+
+/**************************************************************************************************
 **    static functions
 **************************************************************************************************/
+
 /**************************************************************************************************
 **
 **  Function:
@@ -318,25 +564,29 @@ STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer)
 {
   // Search for ETX in the buffer
   UINT8 msg_len = RFID_ResLength(buffer, RFID_EXPEC_RES_VE_LEN);
+  // Check if the message length is valid
+  if (msg_len < 3)
+  {
+    return RFID_SYNTAX_ERROR;
+  }
   // Copy buffer to temporary working buffer
-
   UINT8 i;
   for (i = 0; i < RFID_EXPEC_RES_VE_LEN; i++)
   {
     au8_rfidRxBuffer[i] = buffer[i];
   }
-  if (msg_len < 3)
-  {
-    return RFID_SYNTAX_ERROR;
-  }
 
-  // Check the checksum
-  UINT8 receivedChecksum = au8_rfidRxBuffer[RFID_EXPEC_RES_VE_LEN - 2];
-  UINT8 calculatedChecksum = RFID_CalculateChecksum(au8_rfidRxBuffer, RFID_EXPEC_RES_VE_LEN - 2);
-  if (receivedChecksum != calculatedChecksum)
+  if(RFID_VerifyChecksum(au8_rfidRxBuffer, msg_len) != RFID_OK) 
   {
     return RFID_CHCK_ERROR;
-  } 
+  }
+  // Check the checksum
+  // UINT8 receivedChecksum = au8_rfidRxBuffer[RFID_EXPEC_RES_VE_LEN - 2];
+  // UINT8 calculatedChecksum = RFID_CalculateChecksum(au8_rfidRxBuffer, RFID_EXPEC_RES_VE_LEN - 2);
+  // if (receivedChecksum != calculatedChecksum)
+  // {
+  //   return RFID_CHCK_ERROR;
+  // } 
 
   return RFID_OK;
 }
@@ -368,17 +618,20 @@ STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *
   UINT8 i; 
   for (i = 0; i < RFID_EXPEC_RES_SF_LEN; i++)
   {
-    au8_rfidRxBuffer[i] = buffer[i];
+    u32_rfidFunctionCallCounter++;
+    au8_rfidRxBuffer[i] = au8_rfidDmaBufferRx[i];
   }
   /* Calculate the received message length */ 
-  UINT8 msg_len = RFID_ResLength(au8_rfidRxBuffer, RFID_EXPEC_RES_SF_LEN); 
+  UINT8 msg_len = RFID_ResLength(au8_rfidDmaBufferRx, RFID_EXPEC_RES_SF_LEN); 
   if (msg_len < 3)
   {
     return RFID_SYNTAX_ERROR;
   } 
   // Check the checksum
-  RFID_VerifyChecksum(au8_rfidRxBuffer, msg_len); 
-
+  if(RFID_VerifyChecksum(au8_rfidRxBuffer, msg_len) != RFID_OK) 
+  {
+    return RFID_CHCK_ERROR;
+  }
  
    // Fill raw data structure
   s_rfidRawData->u8_status = au8_rfidRxBuffer[0];
@@ -1020,7 +1273,7 @@ void delay_ms(uint32_t ms)
  **************************************************************************************************/
  STATIC void uartInitDmaTx(void)
  {
-  /* enable DMA1 clock */
+   /* enable DMA1 clock */
    RCC->AHBENR |= RCC_AHBENR_DMA1EN;
 
    /* Control register 3 (USART_CR3) */

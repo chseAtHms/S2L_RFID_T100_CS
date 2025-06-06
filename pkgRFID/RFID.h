@@ -25,7 +25,7 @@
 **************************************************************************************************/    
 /* Baudrate */    
 #define RFID_38400_BAUDRATE 38400u  
-//#define RFID_115200_BAUD 115200u
+#define RFID_115200_BAUD 115200u
 
 #define RFID_RAW_MAX_LEN    70u
 #define RFID_UID_LEN        8u
@@ -66,6 +66,21 @@ typedef enum {
   RFID_FAILURE,
 } t_RFID_ACCESS_STATE;
 
+typedef enum {
+  TX_BOOT_FIRMWARE,
+  RX_BOOT_FIRMWARE,
+  TX_READ_UID,
+  RX_READ_UID,
+  STATE_READ_REC_EVEN,
+  STATE_CHECK_REC_EVEN,
+  STATE_READ_REC_ODD,
+  STATE_CHECK_REC_ODD,
+  STATE_CHCK_TAG,
+  STATE_SUCCESS,
+  STATE_FAILURE,
+  STATE_FAILURE_UID,
+} t_RFID_TAG_READ_STATE;
+
 
 /**************************************************************************************************    
 **   data types     
@@ -95,6 +110,7 @@ typedef struct {
 **   function prototypes    
 **************************************************************************************************/    
 void RFID_Init(void);    
-void RFID_Process(void);
+void RFID_Reader_Boot(void);
+void RFID_ReadTag(void);
 #endif /* #ifdef RFID_ACTIVE */    
 #endif /* #ifndef RFID_H */    

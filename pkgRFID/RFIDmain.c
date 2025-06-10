@@ -56,16 +56,16 @@
 #define TIMER_START(timer)  timerStart(&s_TimeDurations.timer)
 #define TIMER_STOP(timer)   timerStop(&s_TimeDurations.timer)
 
-#define RFID_OK 0
+#define RFID_OK 0u
 #define RFID_POWER_ON_NOTIFICATION 2
 #define RFID_TIMEOUT_ERROR 1
 #define RFID_SYNTAX_ERROR 4 
 #define RFID_CHCK_ERROR 3
-#define RFID_NO_TAG 5 
 #define RFID_TOO_SHORT 6 
 #define RFID_UNKNOWN_ERROR 7 
 
 #define RFID_MAX_LEN 96u
+#define RFID_ERROR_RES_LEN 3u
 
 #define RFID_CMD_VE_LEN 4u
 #define RFID_EXPEC_RES_VE_LEN 70u
@@ -86,8 +86,7 @@
 #define CRC_SEED 0xFFFFFFFF
 #define CRC_XOROUT 0xFFFFFFFF
 
-UINT8 au8_rfidRxBuffer[75];
-UINT8 au8_rfidRxDMAFinished[5];
+//UINT8 au8_rfidRxBuffer[75];
 
 
 
@@ -102,7 +101,7 @@ UINT8 au8_rfidRxDMAFinished[5];
 } t_RFID_DATA; */
 
 
-typedef struct
+/* typedef struct
 {
   UINT32 u32_cur;
   UINT32 u32_max;
@@ -110,16 +109,11 @@ typedef struct
 
 typedef struct
 {
-  t_TIME s_txSingleReadFixCode;
-  t_TIME s_rxReadRecords;
-  t_TIME s_txReadTag;
-  t_TIME s_rxReadTag;
-
   t_TIME s_rxReadTagOk;
   t_TIME s_rxReadTagNok;
 } t_TIME_DURATIONS;
 
-
+ */
 /* Transmit and Receive DMA buffer which are used from the DMA. These buffers are
 ** attached the DMA buffer section in the RAM. This is a specified section in the
 ** RAM just for DMA buffers. It is defined in the scatter file.
@@ -136,8 +130,9 @@ t_RFID_TAG_READ_STATE e_rfidAccessState;
 
 UINT8 verifyResult = RFID_OK;
 
-// Counter for function calls
-UINT32 u32_rfidFunctionCallCounter = 0;
+t_RFID_TAG_DATA s_rfidTagRecordEven;
+t_RFID_TAG_DATA s_rfidTagRecordOdd;
+
 
 /* RFID information */
 
@@ -170,8 +165,8 @@ STATIC void uartInitDmaTx(void);
 STATIC void uartInitDmaRx(void);
 STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
 STATIC void RFID_FrameRxInit(UINT8 u8_len);
-STATIC void timerStart(t_TIME *ps_timer);
-STATIC void timerStop(t_TIME *ps_timer);
+//STATIC void timerStart(t_TIME *ps_timer);
+//STATIC void timerStop(t_TIME *ps_timer);
 STATIC UINT32 CRC32(const UINT8* data, UINT8 length);
 
 /**************************************************************************************************
@@ -282,9 +277,8 @@ void RFID_Reader_Boot(void)
 
    t_RFID_RAW_DATA s_rfidRawData;
    t_RFID_TAG_DATA s_rfidTagData;
-   t_RFID_TAG_DATA s_rfidTagRecordEven;
-   t_RFID_TAG_DATA s_rfidTagRecordOdd;
 
+    
    switch (e_rfidAccessState)
    {
      case TX_READ_UID:
@@ -296,27 +290,38 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_UID:
      {
-        u32_rfidFunctionCallCounter++;
-        if (RFID_DMA_CHANNEL_RX->CNDTR == 0) 
+        UINT8 dma_rx_len = RFID_EXPEC_RES_SF_LEN - RFID_DMA_CHANNEL_RX->CNDTR;
+
+        if (dma_rx_len >= RFID_ERROR_RES_LEN)
+        //if (RFID_DMA_CHANNEL_RX->CNDTR == 0) 
         {
-          // Verify the received Single Read Fix Code message
-          verifyResult = RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData);
-          if( verifyResult == RFID_OK)
+          if (au8_rfidDmaBufferRx[dma_rx_len -1u] == RFID_ETX) // Check for ETX
           {
-              RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
-            /* Copy Fix Code and store it in both records for R_CRC calculation */
-            UINT8 i;
-            for (i = 0; i < RFID_UID_LEN; i++)
+            // Verify the received Single Read Fix Code message
+            verifyResult = RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData);
+            if( verifyResult == RFID_OK)
             {
-              s_rfidTagRecordEven.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
-              s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+              RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
+              /* Copy Fix Code and store it in both records for R_CRC calculation */
+              UINT8 i;
+              for (i = 0; i < RFID_UID_LEN; i++)
+              {
+                s_rfidTagRecordEven.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+                s_rfidTagRecordOdd.au8_tag_uid[i] = s_rfidTagData.au8_tag_uid[i];
+              }
+              // Tag found, proceed to read the even record
+              e_rfidAccessState = TX_READ_REC_EVEN;
             }
-            e_rfidAccessState = TX_READ_REC_EVEN;
-          }
-          else
-          {
-              // Handle error
-              e_rfidAccessState = STATE_FAILURE_UID;
+            else if (verifyResult == RFID_NO_TAG)
+            {
+                // No tag detected, retry reading
+                e_rfidAccessState = TX_READ_UID;
+            }
+            else
+            {
+                // Handle error
+                e_rfidAccessState = STATE_FAILURE_UID;
+            } 
           }
         }
       break;
@@ -480,6 +485,7 @@ void RFID_Reader_Boot(void)
 *****************************************************************************************************/
 STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer)
 {
+  UINT8 au8_rfidRxBuffer[75];
   // Search for ETX in the buffer
   UINT8 msg_len = RFID_ResLength(buffer, RFID_EXPEC_RES_VE_LEN);
   // Check if the message length is valid
@@ -532,11 +538,11 @@ STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer)
 **************************************************************************************************/
 STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData)
 {
+  UINT8 au8_rfidRxBuffer[75];
   // Copy buffer to temporary working buffer to prevent overwriting of DMA buffer
   UINT8 i; 
   for (i = 0; i < RFID_EXPEC_RES_SF_LEN; i++)
   {
-    u32_rfidFunctionCallCounter++;
     au8_rfidRxBuffer[i] = au8_rfidDmaBufferRx[i];
   }
   /* Calculate the received message length */ 
@@ -568,9 +574,38 @@ STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *
     {
       s_rfidRawData->au8_data[i] = 0xFF; // Fill with 0xFF if no data available
     }
-  }  
-
-  return RFID_OK;
+  } 
+  
+  if (s_rfidRawData->u8_status == RFID_CMD_OK)
+  {
+    // If the status is OK, return RFID_OK
+    return RFID_OK;
+  }
+  else if (s_rfidRawData->u8_status == RFID_PWR_ON_NOTIFICATION)
+  {
+    // If the status is power on notification, return RFID_POWER_ON_NOTIFICATION
+    return RFID_POWER_ON_NOTIFICATION;
+  }
+  else if (s_rfidRawData->u8_status == RFID_CMD_SYNTAX_ERROR)
+  {
+    // If the status is syntax error, return RFID_SYNTAX_ERROR
+    return RFID_CMD_SYNTAX_ERROR;
+  }
+  else if (s_rfidRawData->u8_status == RFID_NO_TAG)
+  {
+    // If the status is no tag, return RFID_NO_TAG
+    return RFID_NO_TAG;
+  }
+  else if (s_rfidRawData->u8_status == RFID_HW_ERROR)
+  {
+    // If the status is hardware error, return RFID_HW_ERROR
+    return RFID_HW_ERROR;
+  }
+  else
+  {
+    // If the status is not OK or power on notification, return RFID_SYNTAX_ERROR
+    return RFID_SYNTAX_ERROR;
+  }
 }
 
 /**************************************************************************************************
@@ -596,6 +631,7 @@ STATIC UINT8 RFID_VerifySingleReadFixCode(const UINT8 *buffer, t_RFID_RAW_DATA *
 *****************************************************************************************************/
 STATIC UINT8 RFID_VerifySingleReadWord(const UINT8 *buffer, t_RFID_RAW_DATA *s_rfidRawData)
 {
+  UINT8 au8_rfidRxBuffer[75];
   // Copy buffer to temporary working buffer to prevent overwriting of DMA buffer
   UINT8 i;
   for (i = 0; i < RFID_EXPEC_RES_SR_LEN; i++)
@@ -746,7 +782,7 @@ STATIC UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_
   for (i = 0; i < RFID_RAW_MAX_LEN; i++)
   {
     s_rfidRawData->au8_data[i] = 0xFF; // Fill with 0xFF
-  } 
+  }
   return RFID_OK;
 }
 
@@ -1057,10 +1093,6 @@ void delay_ms(uint32_t ms)
  **************************************************************************************************/
  STATIC void RFID_FrameTxTrigger(UINT8 u8_len)
  {
-	       static uint8_t called_once = 0;
-
-    if (called_once)
-        return;  // Already called, do nothing
    /* Disable DMA channel (needed during settings) */
    RFID_DMA_CHANNEL_TX->CCR &= ~DMA_CCR1_EN;
 

@@ -27,6 +27,8 @@
 #define RFID_38400_BAUDRATE 38400u  
 #define RFID_115200_BAUD 115200u
 
+#define RFID_ETX 0x03
+
 #define RFID_RAW_MAX_LEN    70u
 #define RFID_UID_LEN        8u
 #define RFID_SEQ_NUM_LEN    1u
@@ -42,6 +44,13 @@
 #define RFID_REC_IDX_RES2   3u
 #define RFID_REC_IDX_S2L_ID 4u
 #define RFID_REC_IDX_R_CRC    8u
+
+// RFID Tag Status Codes
+#define RFID_CMD_OK               0x30u
+#define RFID_PWR_ON_NOTIFICATION  2u
+#define RFID_CMD_SYNTAX_ERROR     4u
+#define RFID_NO_TAG               0x35u
+#define RFID_HW_ERROR             6u
 
 // RFID Record error codes
 #define RFID_REC_OK           0u
@@ -73,6 +82,7 @@ typedef enum {
   RX_READ_UID,
   TX_READ_REC_EVEN,
   RX_READ_REC_EVEN,
+  CHECK_REC_EVEN,
   STATE_CHECK_REC_EVEN,
   STATE_READ_REC_ODD,
   STATE_CHECK_REC_ODD,

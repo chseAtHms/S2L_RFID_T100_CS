@@ -82,12 +82,19 @@
 /*  Failure count a maximum of 2 failures per hour is allowed 
  *  (see [SAC_23])
 */
+
 #define RFID_MAX_FAILURE_COUNT      2u
+
+/* Timeouts for RFID operations */
+#define RFID_BOOT_READER_TIMEOUT    30000u // 30 ms
+#define RFID_READ_UID_TIMEOUT       30000u // 30 ms
+#define RFID_READ_REC_TIMEOUT       50000u // 50 ms
 
 /* Failure types for RFID operations for global error handling */
 typedef enum {
   RFID_FAIL_NONE,
   RFID_FAIL_BOOT_READER,
+  RFID_FAIL_BOOT_READER_TIMEOUT,
   RFID_FAIL_UID_TIMEOUT,
   RFID_FAIL_UID_VERIFY,
   RFID_FAIL_EVEN_REC_TIMEOUT,
@@ -131,6 +138,7 @@ typedef enum {
   TX_READ_REC_ODD,
   RX_READ_REC_ODD,
   CHECK_REC_ODD,
+  CHECK_TAG_RECORDS,
   STATE_SUCCESS,
   STATE_FAILURE,
 } t_RFID_TAG_READ_STATE;

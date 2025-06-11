@@ -80,22 +80,7 @@
 #define CRC_SEED 0xFFFFFFFF
 #define CRC_XOROUT 0xFFFFFFFF
 
-//UINT8 au8_rfidRxBuffer[75];
-
-
-
-//t_RFID_TAG_DATA s_rfidTagData;
-
-/* typedef struct {
-  UINT8 u8_status;
-  UINT8 u8_data[RFID_MAX_LEN];
-  UINT8 u8_CHCK;
-  UINT8 u8_ETX;
-  UINT8 u8_len;
-} t_RFID_DATA; */
-
-
-/* typedef struct
+typedef struct
 {
   UINT32 u32_cur;
   UINT32 u32_max;
@@ -103,11 +88,15 @@
 
 typedef struct
 {
+  t_TIME s_BootFirmware;
+  t_TIME s_readUid;
+  t_TIME s_readRecordEven;
   t_TIME s_rxReadTagOk;
   t_TIME s_rxReadTagNok;
 } t_TIME_DURATIONS;
 
- */
+t_TIME_DURATIONS s_TimeDurations;
+
 /* Transmit and Receive DMA buffer which are used from the DMA. These buffers are
 ** attached the DMA buffer section in the RAM. This is a specified section in the
 ** RAM just for DMA buffers. It is defined in the scatter file.
@@ -155,6 +144,7 @@ STATIC UINT8 RFID_ParseSingleFixCode(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_
 STATIC UINT8 RFID_ParseRecord(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s_rfidTagData);
 STATIC size_t RFID_ResLength(const UINT8 *buffer, size_t maxLength);
 STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData);
+STATIC UINT8 RFID_CheckTagRecordFields(void);
 /* Utility functions */
 STATIC void uartInit(void);
 STATIC void uartInitDmaTx(void);
@@ -162,8 +152,8 @@ STATIC void uartInitDmaRx(void);
 STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
 STATIC void RFID_FrameRxInit(UINT8 u8_len);
 STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure);
-//STATIC void timerStart(t_TIME *ps_timer);
-//STATIC void timerStop(t_TIME *ps_timer);
+STATIC void timerStart(t_TIME *ps_timer);
+STATIC void timerStop(t_TIME *ps_timer);
 STATIC UINT32 CRC32(const UINT8* data, UINT8 length);
 
 /**************************************************************************************************
@@ -224,7 +214,7 @@ void RFID_Reader_Boot(void)
   {
     case TX_BOOT_FIRMWARE:    
     {
-       
+      TIMER_START(s_BootFirmware);
       RFID_BootReader();
       RFID_FrameRxInit(RFID_EXPEC_RES_VE_LEN);
       e_rfidAccessState = RX_BOOT_FIRMWARE;
@@ -232,9 +222,11 @@ void RFID_Reader_Boot(void)
     }
     case RX_BOOT_FIRMWARE:
     { 
+      UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_BootFirmware.u32_cur;
       // Wait for the DMA transfer to complete
       if (RFID_DMA_CHANNEL_RX->CNDTR == 0)
       {
+        TIMER_STOP(s_BootFirmware);
         if (RFID_VerifySWVersion(au8_rfidDmaBufferRx) == RFID_OK)
         {
           e_rfidAccessState = TX_READ_UID;
@@ -243,6 +235,11 @@ void RFID_Reader_Boot(void)
         {
           RFID_HandleFailure(RFID_FAIL_BOOT_READER);
         }
+      }
+      else if (u32_elapsed > RFID_BOOT_READER_TIMEOUT)
+      {
+        // Timeout occurred, handle failure
+        RFID_HandleFailure(RFID_FAIL_BOOT_READER_TIMEOUT);
       }
       break; 
     }
@@ -283,6 +280,7 @@ void RFID_Reader_Boot(void)
    {
      case TX_READ_UID:
      {
+        TIMER_START(s_readUid);
         RFID_FrameTxSingleReadFixCode();
         RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
         e_rfidAccessState = RX_READ_UID;
@@ -290,6 +288,7 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_UID:
      {
+        UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readUid.u32_cur;
         UINT8 dma_rx_len = RFID_EXPEC_RES_SF_LEN - RFID_DMA_CHANNEL_RX->CNDTR;
 
         if (dma_rx_len >= RFID_ERROR_RES_LEN)
@@ -297,6 +296,7 @@ void RFID_Reader_Boot(void)
         {
           if (au8_rfidDmaBufferRx[dma_rx_len -1u] == RFID_ETX) // Check for ETX
           {
+            TIMER_STOP(s_readUid);
             // Verify the received Single Read Fix Code message
             UINT8 res = RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData);
             if( res == RFID_OK)
@@ -324,10 +324,21 @@ void RFID_Reader_Boot(void)
             } 
           }
         }
+        else 
+        {
+          // Check for timeout
+          if (u32_elapsed > RFID_READ_UID_TIMEOUT)
+          {
+            // Timeout occurred, handle failure
+            RFID_HandleFailure(RFID_FAIL_UID_TIMEOUT);
+          }
+
+        }
       break;
      }
      case TX_READ_REC_EVEN: 
      {  
+        TIMER_START(s_readRecordEven);
         RFID_FrameTxReadRecord_0();
         RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
         e_rfidAccessState = RX_READ_REC_EVEN;
@@ -335,8 +346,10 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_REC_EVEN:
      {
+      UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readRecordEven.u32_cur;
       if (RFID_DMA_CHANNEL_RX->CNDTR == 0) 
       {
+        TIMER_STOP(s_readRecordEven);
         if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
         { 
           if (RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordEven) == RFID_OK)
@@ -351,6 +364,15 @@ void RFID_Reader_Boot(void)
         else
         {
           RFID_HandleFailure(RFID_FAIL_EVEN_REC_VERIFY);
+        }
+      }
+      else
+      {
+        // Check for timeout
+        if (u32_elapsed > RFID_READ_REC_TIMEOUT)
+        {
+          // Timeout occurred, handle failure
+          RFID_HandleFailure(RFID_FAIL_EVEN_REC_TIMEOUT);
         }
       }
       break;
@@ -400,13 +422,25 @@ void RFID_Reader_Boot(void)
      {
         if (RFID_CalculateCRC(&s_rfidTagRecordOdd) == RFID_OK)
         {
-          e_rfidAccessState = STATE_SUCCESS;
+          e_rfidAccessState = CHECK_TAG_RECORDS;
         } 
         else
         {
           RFID_HandleFailure(RFID_FAIL_ODD_REC_CRC_ERROR);
         }
       break;
+     }
+     case CHECK_TAG_RECORDS:
+     {
+        if (RFID_CheckTagRecordFields() == RFID_OK)
+        {
+          e_rfidAccessState = TX_READ_UID;
+        }
+        else
+        {
+          RFID_HandleFailure(RFID_FAIL_UNKNOWN);
+        }
+        break;
      }
      case STATE_FAILURE:
      {
@@ -812,8 +846,33 @@ STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData)
   }
 }
 
-
-
+/****************************************************************************************************
+**
+**  Function:
+**    UINT8 RFID_CheckTagRecordFields(void)
+**
+**  Description:
+**    This function checks the plausibility of of all fields of the read records from 
+**    the RFID tag. It checks the sequence number, reserved bytes and S2L ID. And compares it 
+**    with the the received data from the second safety controller.
+**
+**  See also:
+**    -
+**  Parameters:
+**    -
+**  Return value:
+**    RFID_REC_OK (0) - All fields are valid
+**    RFID_REC_INVALID_LEN (1) - Record length is invalid
+**    RFID_REC_INVALID_S2L_ID (4) - S2L ID is invalid
+**    RFID_REC_INVALID_SEQ_NUM (5) - Sequence number is invalid
+**    RFID_REC_INVALID_UID (6) - UID is invalid
+*****************************************************************************************************
+*/
+STATIC UINT8 RFID_CheckTagRecordFields(void)
+{
+  /* Search for new tag again */
+  return RFID_OK;
+}
 
 /**************************************************************************************************
 **
@@ -1139,6 +1198,7 @@ STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure)
       break;
     
     case RFID_FAIL_BOOT_READER:
+    case RFID_FAIL_BOOT_READER_TIMEOUT:
     case RFID_FAIL_UNKNOWN:
   default:
     /* Global failure */
@@ -1336,53 +1396,53 @@ STATIC UINT32 CRC32(const UINT8 * data, UINT8 length)
  return crc;
 }
 
-// /**************************************************************************************************
-// **
-// **  Function:
-// **    void timerStart(t_TIME *ps_timer)
-// **
-// **  Description:
-// **    This function starts the timer.
-// **
-// **  See also:
-// **    -
-// **
-// **  Parameters:
-// **    ps_timer (IN) - Pointer to the timer structure
-// **
-// **  Return value:
-// **    -
-// **************************************************************************************************/
-// STATIC void timerStart(t_TIME *ps_timer)
-// {
-//   ps_timer->u32_cur = timerHAL_GetSystemTime3();
-// }
+/**************************************************************************************************
+**
+**  Function:
+**    void timerStart(t_TIME *ps_timer)
+**
+**  Description:
+**    This function starts the timer.
+**
+**  See also:
+**    -
+**
+**  Parameters:
+**    ps_timer (IN) - Pointer to the timer structure
+**
+**  Return value:
+**    -
+**************************************************************************************************/
+STATIC void timerStart(t_TIME *ps_timer)
+{
+  ps_timer->u32_cur = timerHAL_GetSystemTime3();
+}
 
-// /**************************************************************************************************
-// **
-// **  Function:
-// **    void timerStop(t_TIME *ps_timer)
-// **
-// **  Description:
-// **    This function stops the timer.
-// **
-// **  See also:
-// **    -
-// **
-// **  Parameters:
-// **    ps_timer (IN) - Pointer to the timer structure
-// **
-// **  Return value:
-// **    -
-// **************************************************************************************************/
-// STATIC void timerStop(t_TIME *ps_timer)
-// {
-//   UINT32 u32_curTime = (UINT32)(timerHAL_GetSystemTime3() - ps_timer->u32_cur);
+/**************************************************************************************************
+**
+**  Function:
+**    void timerStop(t_TIME *ps_timer)
+**
+**  Description:
+**    This function stops the timer.
+**
+**  See also:
+**    -
+**
+**  Parameters:
+**    ps_timer (IN) - Pointer to the timer structure
+**
+**  Return value:
+**    -
+**************************************************************************************************/
+STATIC void timerStop(t_TIME *ps_timer)
+{
+  UINT32 u32_curTime = (UINT32)(timerHAL_GetSystemTime3() - ps_timer->u32_cur);
 
-//   if (u32_curTime > ps_timer->u32_max)
-//   {
-//     ps_timer->u32_max = u32_curTime;
-//   }
-// }
+  if (u32_curTime > ps_timer->u32_max)
+  {
+    ps_timer->u32_max = u32_curTime;
+  }
+}
 
 #endif /* #ifdef RFID_ACTIVE */

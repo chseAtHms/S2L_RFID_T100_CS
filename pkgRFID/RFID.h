@@ -23,42 +23,81 @@
 /**************************************************************************************************    
 **    constants and macros    
 **************************************************************************************************/    
-/* Baudrate */    
-#define RFID_38400_BAUDRATE 38400u  
-#define RFID_115200_BAUD 115200u
+/* Baudrate constants for the RFID reader */   
+#define RFID_38400_BAUDRATE         38400u  
+#define RFID_115200_BAUD            115200u
 
-#define RFID_ETX 0x03
+/* RFID Tag Status Codes
+  * 
+  * These codes are used to indicate the status of the RFID tag operations.
+  * They are used in the communication between the RFID reader and the tag.
+  * (see RFID Reader Manual tdoct3728d_ger.pdf chapter 6.7)
+  */
+#define RFID_CMD_OK                 0x30u
+#define RFID_PWR_ON_NOTIFICATION    2u
+#define RFID_CMD_SYNTAX_ERROR       4u
+#define RFID_NO_TAG                 0x35u
+#define RFID_HW_ERROR               6u
 
-#define RFID_RAW_MAX_LEN    70u
-#define RFID_UID_LEN        8u
-#define RFID_SEQ_NUM_LEN    1u
-#define RFID_RES_LEN        3u
-#define RFID_S2L_ID_LEN     4u
-#define RFID_RECORD_CRC_LEN 4u
-  
-// RFID Record structure
-#define RFID_REC_TOTAL_LEN  12u
-#define RFID_REC_IDX_SEQ    0u
-#define RFID_REC_IDX_RES0   1u
-#define RFID_REC_IDX_RES1   2u
-#define RFID_REC_IDX_RES2   3u
-#define RFID_REC_IDX_S2L_ID 4u
-#define RFID_REC_IDX_R_CRC    8u
+/* RFID Protocol Constants 
+ * 
+ */
+#define RFID_ETX                    0x03
 
-// RFID Tag Status Codes
-#define RFID_CMD_OK               0x30u
-#define RFID_PWR_ON_NOTIFICATION  2u
-#define RFID_CMD_SYNTAX_ERROR     4u
-#define RFID_NO_TAG               0x35u
-#define RFID_HW_ERROR             6u
+#define RFID_RAW_MAX_LEN            70u
+#define RFID_UID_LEN                8u
+#define RFID_SEQ_NUM_LEN            1u
+#define RFID_RES_LEN                3u
+#define RFID_S2L_ID_LEN             4u
+#define RFID_RECORD_CRC_LEN         4u
 
-// RFID Record error codes
-#define RFID_REC_OK           0u
-#define RFID_REC_INVALID_LEN  1u
-#define RFID_REC_INVALID_RES  2u
-#define RFID_REC_SEQ_NUM_ERROR  4u
-#define RFID_REC_CRC_ERROR     3u
 
+/* RFID Record Structure 
+ * (see SAC_003, SAC_004, SAC_005 SAC_006)
+ */
+#define RFID_REC_TOTAL_LEN          12u
+#define RFID_REC_IDX_SEQ            0u
+#define RFID_REC_IDX_RES0           1u
+#define RFID_REC_IDX_RES1           2u
+#define RFID_REC_IDX_RES2           3u
+#define RFID_REC_IDX_S2L_ID         4u
+#define RFID_REC_IDX_R_CRC          8u
+
+/*  Error codes for RFID operations on file and function level */
+#define RFID_OK                     0u
+#define RFID_POWER_ON_NOTIFICATION  2
+#define RFID_TIMEOUT_ERROR          1
+#define RFID_SYNTAX_ERROR           4 
+#define RFID_CHCK_ERROR             3
+#define RFID_TOO_SHORT              6 
+#define RFID_UNKNOWN_ERROR          7 
+
+/* RFID Record error codes */
+#define RFID_REC_OK                 0u
+#define RFID_REC_INVALID_LEN        1u
+#define RFID_REC_INVALID_RES        2u
+#define RFID_REC_SEQ_NUM_ERROR      4u
+#define RFID_REC_CRC_ERROR          3u
+
+/*  Failure count a maximum of 2 failures per hour is allowed 
+ *  (see [SAC_23])
+*/
+#define RFID_MAX_FAILURE_COUNT      2u
+
+/* Failure types for RFID operations for global error handling */
+typedef enum {
+  RFID_FAIL_NONE,
+  RFID_FAIL_BOOT_READER,
+  RFID_FAIL_UID_TIMEOUT,
+  RFID_FAIL_UID_VERIFY,
+  RFID_FAIL_EVEN_REC_TIMEOUT,
+  RFID_FAIL_EVEN_REC_VERIFY,
+  RFID_FAIL_EVEN_REC_CRC_ERROR,
+  RFID_FAIL_ODD_REC_TIMEOUT,
+  RFID_FAIL_ODD_REC_VERIFY,
+  RFID_FAIL_ODD_REC_CRC_ERROR,
+  RFID_FAIL_UNKNOWN,
+} t_RFID_FAILURE;
 
 typedef enum {
   WF_TX_BOOT_FIRMWARE,
@@ -75,6 +114,12 @@ typedef enum {
   RFID_FAILURE,
 } t_RFID_ACCESS_STATE;
 
+/* RFID Tag Read States
+ * 
+ * These states are used to manage the reading process of the RFID tag.
+ * The states are used in a state machine to control the flow of reading
+ * the UID and records from the RFID tag.
+ */
 typedef enum {
   TX_BOOT_FIRMWARE,
   RX_BOOT_FIRMWARE,
@@ -88,10 +133,6 @@ typedef enum {
   CHECK_REC_ODD,
   STATE_SUCCESS,
   STATE_FAILURE,
-  STATE_FAILURE_UID,
-  STATE_FAILURE_REC,
-  STATE_FAILURE_REC_ODD,
-  RFID_EVEN_REC_CRC_ERROR,
 } t_RFID_TAG_READ_STATE;
 
 

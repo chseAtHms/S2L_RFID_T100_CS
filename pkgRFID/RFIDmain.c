@@ -56,13 +56,7 @@
 #define TIMER_START(timer)  timerStart(&s_TimeDurations.timer)
 #define TIMER_STOP(timer)   timerStop(&s_TimeDurations.timer)
 
-#define RFID_OK 0u
-#define RFID_POWER_ON_NOTIFICATION 2
-#define RFID_TIMEOUT_ERROR 1
-#define RFID_SYNTAX_ERROR 4 
-#define RFID_CHCK_ERROR 3
-#define RFID_TOO_SHORT 6 
-#define RFID_UNKNOWN_ERROR 7 
+
 
 #define RFID_MAX_LEN 96u
 #define RFID_ERROR_RES_LEN 3u
@@ -128,7 +122,9 @@ UINT8 au8_rfidDmaBufferRx[255] __attribute__((section("DMA_BUFFER_SECTION")));
 
 t_RFID_TAG_READ_STATE e_rfidAccessState;
 
-UINT8 verifyResult = RFID_OK;
+t_RFID_FAILURE e_rfidLastFailure = RFID_FAIL_NONE;
+UINT8 u8_rfidFailureCount = 0u;
+
 
 t_RFID_TAG_DATA s_rfidTagRecordEven;
 t_RFID_TAG_DATA s_rfidTagRecordOdd;
@@ -165,6 +161,7 @@ STATIC void uartInitDmaTx(void);
 STATIC void uartInitDmaRx(void);
 STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
 STATIC void RFID_FrameRxInit(UINT8 u8_len);
+STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure);
 //STATIC void timerStart(t_TIME *ps_timer);
 //STATIC void timerStop(t_TIME *ps_timer);
 STATIC UINT32 CRC32(const UINT8* data, UINT8 length);
@@ -244,8 +241,7 @@ void RFID_Reader_Boot(void)
         }
         else
         {
-          // Retry
-          e_rfidAccessState = STATE_FAILURE; 
+          RFID_HandleFailure(RFID_FAIL_BOOT_READER);
         }
       }
       break; 
@@ -274,11 +270,15 @@ void RFID_Reader_Boot(void)
 **************************************************************************************************/
  void RFID_ReadTag(void)
  {
-
    t_RFID_RAW_DATA s_rfidRawData;
    t_RFID_TAG_DATA s_rfidTagData;
 
-    
+   /* Check if failure count exceeds maximum allowed */
+   if (u8_rfidFailureCount  > RFID_MAX_FAILURE_COUNT)
+   {
+      e_rfidAccessState = STATE_FAILURE;
+   }
+
    switch (e_rfidAccessState)
    {
      case TX_READ_UID:
@@ -298,8 +298,8 @@ void RFID_Reader_Boot(void)
           if (au8_rfidDmaBufferRx[dma_rx_len -1u] == RFID_ETX) // Check for ETX
           {
             // Verify the received Single Read Fix Code message
-            verifyResult = RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData);
-            if( verifyResult == RFID_OK)
+            UINT8 res = RFID_VerifySingleReadFixCode(au8_rfidDmaBufferRx, &s_rfidRawData);
+            if( res == RFID_OK)
             {
               RFID_ParseSingleFixCode(&s_rfidRawData, &s_rfidTagData);
               /* Copy Fix Code and store it in both records for R_CRC calculation */
@@ -312,15 +312,15 @@ void RFID_Reader_Boot(void)
               // Tag found, proceed to read the even record
               e_rfidAccessState = TX_READ_REC_EVEN;
             }
-            else if (verifyResult == RFID_NO_TAG)
+            else if (res == RFID_NO_TAG)
             {
                 // No tag detected, retry reading
                 e_rfidAccessState = TX_READ_UID;
             }
             else
             {
-                // Handle error
-                e_rfidAccessState = STATE_FAILURE_UID;
+              /* Handle failure */
+              RFID_HandleFailure(RFID_FAIL_UID_VERIFY);
             } 
           }
         }
@@ -345,12 +345,12 @@ void RFID_Reader_Boot(void)
           }
           else
           {
-            e_rfidAccessState = STATE_FAILURE_REC;
+            RFID_HandleFailure(RFID_FAIL_EVEN_REC_VERIFY);
           }
         } 
         else
         {
-          e_rfidAccessState = STATE_FAILURE;
+          RFID_HandleFailure(RFID_FAIL_EVEN_REC_VERIFY);
         }
       }
       break;
@@ -363,7 +363,7 @@ void RFID_Reader_Boot(void)
         }
         else
         {
-          e_rfidAccessState  = RFID_EVEN_REC_CRC_ERROR;
+          RFID_HandleFailure(RFID_FAIL_EVEN_REC_CRC_ERROR);
         }
          break;
      }
@@ -386,12 +386,12 @@ void RFID_Reader_Boot(void)
           }
           else
           {
-            e_rfidAccessState = STATE_FAILURE_REC_ODD;
+            RFID_HandleFailure(RFID_FAIL_ODD_REC_VERIFY);
           }
         } 
         else
         {
-          e_rfidAccessState = STATE_FAILURE;
+          RFID_HandleFailure(RFID_FAIL_ODD_REC_VERIFY);
         }
       }
       break;
@@ -404,9 +404,13 @@ void RFID_Reader_Boot(void)
         } 
         else
         {
-          e_rfidAccessState = RFID_ODD_REC_CRC_ERROR;
+          RFID_HandleFailure(RFID_FAIL_ODD_REC_CRC_ERROR);
         }
       break;
+     }
+     case STATE_FAILURE:
+     {
+      /* Set global T100 fail safe */
      }
      default:
      {
@@ -1094,6 +1098,54 @@ void delay_ms(uint32_t ms)
    /* Enable DMA and UART */
    RFID_DMA_CHANNEL_RX->CCR |= DMA_CCR5_EN; /* RX */
  }
+
+
+ /**************************************************************************************************
+ **
+ **  Function:
+ **   void RFID_HandleFailure(t_RFID_FAILURE e_failure)
+ **
+ **  Description:
+ **   This function handles the RFID reader failures. It increments the failure count and sets the
+ **   last failure type. Depending on the failure type, it resets the access state to retry reading
+ **   the UID and records.
+ **
+ **  See also:
+ **    -
+ **
+ **  Parameters:
+ **   e_failure (IN) - The type of failure that occurred
+ **
+ **  Return value:
+ **    -
+ **************************************************************************************************/
+STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure)
+{
+  u8_rfidFailureCount++;
+  e_rfidLastFailure = e_failure;
+
+  switch (e_failure)
+  {
+    case RFID_FAIL_UID_TIMEOUT:
+    case RFID_FAIL_UID_VERIFY:
+    case RFID_FAIL_EVEN_REC_TIMEOUT:
+    case RFID_FAIL_EVEN_REC_VERIFY:
+    case RFID_FAIL_EVEN_REC_CRC_ERROR:
+    case RFID_FAIL_ODD_REC_TIMEOUT:
+    case RFID_FAIL_ODD_REC_VERIFY:
+    case RFID_FAIL_ODD_REC_CRC_ERROR:
+      /* Reset the access state to retry reading the UID */
+      e_rfidAccessState = TX_READ_UID;
+      break;
+    
+    case RFID_FAIL_BOOT_READER:
+    case RFID_FAIL_UNKNOWN:
+  default:
+    /* Global failure */
+    e_rfidAccessState = STATE_FAILURE;
+    break;
+  }
+}
 
  /**************************************************************************************************
  **

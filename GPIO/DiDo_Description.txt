@@ -1,0 +1,90 @@
+
+DI / DO Modul Erklärung für Review:
+
+----------------------------------------------
+
+Die DI/DO SW lässt grob in 3 Teile gliedern:
+
+- DO für die gesamte Verarbeitung inkl. Tests der digitalen "safe" Outputs
+- DI für die gesamte Verarbeitung inkl. Tests der digitalen "safe" Inputs
+- Einlesen und Filtern aller Inputs ("safe" inputs und sämtliche Rücklesesignale)
+
+----------------------------------------------
+
+Der DI und DO Teil sind vom Prinzip her gleich aufgebaut:
+Jeder safe Input (DI) und jeder safe Output (DO) haben einen State. Je nach State
+können Test/Diagnosefunktionen aufgerufen werden, die wiederum zu jedem DI/DO
+einen Teststate halten.
+
+Zwei Funktionen, "diState_ProcessDIs" und "gpio_processDOs" rufen die komplette Verarbeitung der DIs oder DOs auf
+und sind quasi die Hauptfunktionen:
+- zuerst Eintritt in eine State machine, die den Status eines jeden DI bzw. DO hält
+- Je nach Status werden verschiedene Aktionen ausgeführt bzw. der Status gewechselt
+- Bei aktivem Status werden die jeweiligen Testfunktionen/Diagnose für die DIs und DOs aufgerufen
+- Für die DOs ist das die Funktion "doDiag_handleDoTestStates", für die DIs sind es die
+  Funktionen "diDiag_handleLevTestStates" und "diDiag_handleLevAndToTestStates".
+  Einziger Unterschied der beiden Funtkionen für die DIs ist das in einem Fall nur einer von 2 möglichen Tests
+  und im zweiten Fall die Funktionen für beide Tests aufgerufen werden
+- Im Nicht-aktiven Modus der DIs oder DOs werden diese Funktionen bzw. Tests nicht aufgerufen
+
+----------------------------------------------
+
+Beschreibung der Testfunktionen/Diagnose (gilt für "doDiag_handleDoTestStates", "diDiag_handleLevTestStates" 
+und "diDiag_handleLevAndToTestStates"):
+- Jedes Testmodul hat wiederum eine State-Machine (Ausnahmen siehe nächster Abschnitt)
+- Es gibt States die auf den ersten Test warten, auf den zyklischen Test warten, oder die States die den Test ausführen
+- Wann es an der Zeit für welchen Test ist, wird durch einen Counter festgelegt (zu finden in einem Struct mit
+  dem Test-State, z.B. in "DI_DIAGSTATE_STRUCT").
+- Die Funktion ist dabei: Mit jedem Aufruf wird der Testcounter hochgezählt, jeder Wert entspricht einem Schritt.
+  Wenn der Counter einen bestimmten Wert hat, erfolgt der entsprechende Test.
+- Wenn ein Test fehschlägt, erfolgt setzen einer Fehlerkennung (jeweils in DiErrHdl.c / DoErrHdl.c)
+  und der DI bzw. DO gehen in den internen Fehler Status (dies ist dann der Status des DIs/DOs, nicht
+  der der Test-State machine)
+- Hinweis: Neben einem internen Fehlerstatus gibt es für DIs/DOs auch einen externen Fehlerstatus, z.B. wenn
+  ein anderes Modul (z.B. Temperaturmessung) einen Fehler meldet.
+
+----------------------------------------------
+
+Die einzelnen Tests sind:
+Für die DIs:
+- Level test (Test auf internen Kurzschluss, eigene Diag-Statemachine, files "diDiagLev...")
+- TO-test (Testsignal nach aussen, eigene Diag-Statemachine, files "diDiagTo...") 
+- Consistency Test (Test beider Kanäle auf Gleichheit, keine Diag-Statmachine, files "diDiagCons..."
+Für die DOs:
+- Voltage Supervision Test (ein Test für alle DOs, eigene Diag-Statemachine, aber ein Diag-State für alle DOs,
+  files "doDiagVsup..."
+- High Side Switch Test (testen, ob DO abschaltbar, eigene Diag-Statemachine, files "doDiagHs...")
+- Test, ob der momentane Wert der DOs dem erwarteten entspricht (keine eigene State-machine, erfolgt
+  nur als Abfrage innerhalb der Funktion "doSetGetPin_switchDoPinOn" und "doSetGetPin_switchDoPinOff"
+
+----------------------------------------------
+
+Beschreibung "Einlesen und Filtern der Inputs":
+- Besteht aus den Schritten einlesen und Filtern:
+- In der Funktion "gpioSample_allPorts" werden zyklisch alle Portwerte gelesen und in einem Ringbuffer abgespeichert
+- Mit den Funktionen "diInput_filterDiRelInputs" und "diInput_filterDoRelInputs" werden die jeweils für die DIs oder DOs
+  relevaten Input-Werte aus dem Ringbuffer über eine 2 aus 3 Auswertung gefiltert.
+- Die Werte der "safe" Inputs des anderen uCs werden über IPC empfangen
+- Über Makros in "diInput.h" können die gefilterten Werte abgeholt werden
+
+----------------------------------------------
+
+HINWEISE FÜR DAS REVIEW (STAND 20.03.2013):
+Momentan sind folgende Dinge noch nicht fertig:
+- Modul diCfg_Int.c/.h
+- Modul diCfg.c/.h
+- Modul doCfg_Int.c/.h
+- Modul doCfg.c/.h
+
+Änderungen sind noch an folgenden Funktionen vorgesehen:
+"doState_intErrState" (doState.c)
+"diState_intErrState" (diState.c)
+"diState_extErrState" (diState.c)
+
+
+
+
+
+
+
+  

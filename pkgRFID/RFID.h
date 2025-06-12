@@ -86,6 +86,8 @@
 #define RFID_MAX_FAILURE_COUNT      2u
 
 /* Timeouts for RFID operations */
+// t100 time slice is ca 100 us
+#define T100_TIME_SLICE_US          100u // 100 us
 #define RFID_BOOT_READER_TIMEOUT    30000u // 30 ms
 #define RFID_READ_UID_TIMEOUT       30000u // 30 ms
 #define RFID_READ_REC_TIMEOUT       50000u // 50 ms
@@ -174,5 +176,7 @@ typedef struct {
 void RFID_Init(void);    
 void RFID_Reader_Boot(void);
 void RFID_ReadTag(void);
+UINT32 RFID_InfoGet(void);
+void RFID_InfoSet(UINT32 u32_info);
 #endif /* #ifdef RFID_ACTIVE */    
 #endif /* #ifndef RFID_H */    

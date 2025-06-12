@@ -90,10 +90,7 @@ typedef struct
 {
   t_TIME s_BootFirmware;
   t_TIME s_readUid;
-  t_TIME s_readRecordEven;
-  t_TIME s_readRecordOdd;
-  t_TIME s_rxReadTagOk;
-  t_TIME s_rxReadTagNok;
+  t_TIME s_readRecord;
 } t_TIME_DURATIONS;
 
 t_TIME_DURATIONS s_TimeDurations;
@@ -388,7 +385,7 @@ void RFID_Reader_Boot(void)
      }
      case TX_READ_REC_EVEN: 
      {  
-        TIMER_START(s_readRecordEven);
+        TIMER_START(s_readRecord);
         RFID_FrameTxReadRecord_0();
         RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
         e_rfidAccessState = RX_READ_REC_EVEN;
@@ -396,10 +393,10 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_REC_EVEN:
      {
-      UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readRecordEven.u32_cur;
+      UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readRecord.u32_cur;
       if (RFID_DMA_CHANNEL_RX->CNDTR == 0) 
       {
-        TIMER_STOP(s_readRecordEven);
+        TIMER_STOP(s_readRecord);
         if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
         { 
           if (RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordEven) == RFID_OK)
@@ -441,7 +438,7 @@ void RFID_Reader_Boot(void)
      }
      case TX_READ_REC_ODD:
      {
-        TIMER_START(s_readRecordOdd);
+        TIMER_START(s_readRecord);
         RFID_FrameTxReadRecord_1();
         RFID_FrameRxInit(RFID_EXPEC_RES_SR_LEN);
         e_rfidAccessState = RX_READ_REC_ODD;      
@@ -449,10 +446,10 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_REC_ODD:
      {
-        UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readRecordOdd.u32_cur;
+        UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readRecord.u32_cur;
         if (RFID_DMA_CHANNEL_RX->CNDTR == 0) 
         {
-          TIMER_STOP(s_readRecordOdd);
+          TIMER_STOP(s_readRecord);
           if (RFID_VerifySingleReadWord(au8_rfidDmaBufferRx, &s_rfidRawData) == RFID_OK)
           { 
             if (RFID_ParseRecord(&s_rfidRawData, &s_rfidTagRecordOdd) == RFID_OK)

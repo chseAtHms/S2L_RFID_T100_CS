@@ -83,8 +83,11 @@
 
 /*! Timeout for the IPC communication */
 #define IPCXSYS_TIMEOUT              ( ( UINT32 ) 100u ) /*!< Timeout for the IPC in usec. */
-#define IPCXSYS_WAITTIMEOUT          ( ( UINT32 )  30u ) /*!< Timeout for the IPC in usec. */
-
+#ifdef RFID_ACTIVE
+  #define IPCXSYS_WAITTIMEOUT          ( ( UINT32 )  50u ) /*!< Timeout for the IPC in usec. */
+#else
+  #define IPCXSYS_WAITTIMEOUT          ( ( UINT32 )  30u ) /*!< Timeout for the IPC in usec. */
+#endif
 
 /***************************************************************************************************
 **    data types

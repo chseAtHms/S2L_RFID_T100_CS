@@ -87,6 +87,10 @@
 /* Header-file of module */
 #include "sch_Scheduler-app.h"
 
+#ifdef RFID_ACTIVE
+  #include "RFID.h"
+#endif /* RFID_ACTIVE */
+
 /***************************************************************************************************
 **    global variables
 ***************************************************************************************************/
@@ -660,6 +664,9 @@ STATIC void timeSlicesStartup (void)
     case 7:
     {
       /* do nothing in this time slice */
+      #ifdef RFID_ACTIVE
+         RFID_Reader_Boot();
+      #endif /* RFID_ACTIVE */
       break;
     }
 
@@ -1064,6 +1071,9 @@ STATIC void timeSlicesRunMode (void)
     case 7:
     {
       gpio_ProcessDOs();
+      #ifdef RFID_ACTIVE
+        RFID_ReadTag();
+      #endif /* RFID_ACTIVE */
       break;
     }
 

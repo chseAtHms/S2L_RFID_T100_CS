@@ -113,6 +113,10 @@
 /* TIM header */
 #include "TIM.h"
 
+#ifdef RFID_ACTIVE
+  #include "RFID.h"
+#endif /* RFID_ACTIVE */
+
 /*******************************************************************************
 **
 ** Public Globals
@@ -267,6 +271,11 @@ STATIC void main_Init (void)
 
   /* initialize clock control module */
   clkCtrl_Init();
+
+
+  #ifdef RFID_ACTIVE
+    RFID_Init(); 
+  #endif /* RFID_ACTIVE */
 }
 
 

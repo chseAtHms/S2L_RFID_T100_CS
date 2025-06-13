@@ -46,7 +46,8 @@
  * (used for [SRS_47]) */
 #define RAMTST_RAM_MAX_SIZE_ASM     0xC000
 /*! This constant defines the size of the RAM to be tested. */
-#define RAMTST_SIZE                 0x1D00
+/* #ifdef RFID_ACTIVATE 0x1D00 was change to 0x1E00 im scatter file does not work the preprocessor */
+#define RAMTST_SIZE                 0x1E00
 
 /* These constants splits the 32 bit RAM-End address into 16 bit high and low.
  * This is used for the ASM-RAM-Test because a 32bit value can not handled. */

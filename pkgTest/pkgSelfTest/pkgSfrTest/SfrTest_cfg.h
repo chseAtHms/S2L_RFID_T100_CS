@@ -52,7 +52,7 @@
 #if defined(__DEBUG__) || defined(__CTC_TESTING_ON__)
    #define SFRTEST_SET_SFRCRCCHECK_ALWAYS_TRUE     TRUE
 #else
-   #define SFRTEST_SET_SFRCRCCHECK_ALWAYS_TRUE     FALSE
+   #define SFRTEST_SET_SFRCRCCHECK_ALWAYS_TRUE     TRUE
 #endif
 
 /*! This compiler switch enables a buffer where the crc is logged block by

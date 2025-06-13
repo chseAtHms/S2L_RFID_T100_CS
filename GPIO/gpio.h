@@ -64,6 +64,9 @@ typedef struct IPC_IO_DATA_TAG
    UINT8 u8SafeDiQual;    /* values of qualifier for safe inputs */
    UINT8 u8SafeDoQual;    /* values of qualifier for safe outputs */
    UINT8 u8AicSyncCnt;    /* sync value for AIC */
+#ifdef RFID_ACTIVE
+   UINT32 u32RfidInfo;     /* RFID information */
+#endif /* RFID_ACTIVE */
 } INPT_IPC_IO_DATA_STRUCT;
 
 

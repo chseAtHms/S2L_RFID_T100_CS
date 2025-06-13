@@ -65,6 +65,11 @@
 /* Header-file of module */
 #include "gpio.h"
 
+#ifdef RFID_ACTIVE
+  #include "cfg_Config-sys.h"
+  #include "RFID.h"
+#endif
+
 
 /*******************************************************************************
 **
@@ -348,8 +353,18 @@ void gpio_SendIOvaluesViaIPC(void)
 
    uIpcIoData.sIoStruct.u8AicSyncCnt = gpio_u8IpcAicSyncSend;
 
+#ifdef RFID_ACTIVE
+  if (cfgSYS_GetControllerID() == SAFETY_CONTROLLER_1)
+  {
+    uIpcIoData.sIoStruct.u32RfidInfo = RFID_InfoGet();
+  }
+
+  ipcxSYS_SendBuffer(IPCXSYS_IPC_ID_IO, (UINT8)sizeof(INPT_IPC_IO_DATA_STRUCT),
+                     (CONST UINT8*)&uIpcIoData.sIoStruct);
+#else
    /* call function to initiate IPC transmission, see [SRS_671] */
    ipcxSYS_SendUINT32(IPCXSYS_IPC_ID_IO, (uIpcIoData.u32IpcPacket));
+#endif /* RFID_ACTIVE */
 }
 
 
@@ -386,8 +401,17 @@ void gpio_GetIOvaluesFromIPC(void)
 {
    INPT_IPC_IO_DATA_UNION uIpcIoDataRx;
 
+#ifdef RFID_ACTIVE
+ ipcxSYS_GetBufferinclWait(IPCXSYS_IPC_ID_IO, (UINT8)sizeof(INPT_IPC_IO_DATA_STRUCT),
+                            (UINT8*)&uIpcIoDataRx.sIoStruct);
+  
+  if (cfgSYS_GetControllerID() == SAFETY_CONTROLLER_2)
+  {
+    RFID_InfoSet(uIpcIoDataRx.sIoStruct.u32RfidInfo);
+  }
+#else
    uIpcIoDataRx.u32IpcPacket = ipcxSYS_GetUINT32inclWait( IPCXSYS_IPC_ID_IO );
-
+#endif /* RFID_ACTIVE */
    dolib_u8TestQualValuesOtherCh = uIpcIoDataRx.sIoStruct.u8SafeDoQual;
    diInput_u8DiTestQualValuesOtherCh = uIpcIoDataRx.sIoStruct.u8SafeDiQual;
    diInput_u8DiBitValuesOtherCh = uIpcIoDataRx.sIoStruct.u8SafeDiValues;

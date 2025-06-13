@@ -49,7 +49,12 @@
 **  size of input data (from the ASM to the network/AM) unit [Bytes]
 **------------------------------------------------------------------------------
 */
+#ifdef RFID_ACTIVE
+#define AICMSGDEF_DATA_IN_LEN         ((UINT8)3U + 4u)
+#else
 #define AICMSGDEF_DATA_IN_LEN         ((UINT8)3U)
+#endif
+
 
 /*------------------------------------------------------------------------------
 **  size of output data (from the network/AM to ASM) unit [Bytes]
@@ -143,7 +148,11 @@
 **  Input Assembly Inst. 0x264 (3 byte user data), [SRS_2056]
 **------------------------------------------------------------------------------
 */
+#ifdef RFID_ACTIVE
+#define AICMSGDEF_CIP_IN_DATA_ASM264_SIZE      ((UINT8)14u + (4u * 2u))
+#else
 #define AICMSGDEF_CIP_IN_DATA_ASM264_SIZE      ((UINT8)14u)
+#endif
 /*------------------------------------------------------------------------------
 **  size of Data field inside T100 SPDU 
 **  The following layout is given:
@@ -231,6 +240,10 @@ typedef __packed struct AICMSGDEF_PS_INPUT_DI_DO_TAG
    UINT8 u8DiQualifiers;
    /* DO qualifiers, [SRS_2018], [SRS_2019], [SRS_2055] */
    UINT8 u8DoQualifiers;
+#ifdef RFID_ACTIVE
+   /* information about the read RFID tag */
+   UINT32 u32_rfidInfo;
+#endif
 }  AICMSGDEF_PS_INPUT_DATA_STRUCT;
 
 

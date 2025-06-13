@@ -102,7 +102,11 @@ typedef struct
 */
 /* Deactivated Lint Note 948: Operator '==' always evaluates to True */
 /*lint -e(948) */
+#ifdef RFID_ACTIVE
+IXX_TASSERT((AICMSGDEF_CIP_IN_DATA_SIZE  == 14u + (4u * 2)), spduIn_chk1)
+#else
 IXX_TASSERT((AICMSGDEF_CIP_IN_DATA_SIZE  == 14u), spduIn_chk1)
+#endif
 /*lint -e(948) */
 IXX_TASSERT((AICMSGDEF_CIP_IN_DATA2_SIZE == 6u),  spduIn_chk2)
 

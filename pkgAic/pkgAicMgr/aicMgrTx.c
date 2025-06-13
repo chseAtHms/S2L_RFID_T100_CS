@@ -75,6 +75,10 @@
 #include "spduOutTcoo.h"
 #include "spduOutData.h"
 
+#ifdef RFID_ACTIVE
+  #include "RFID.h"
+#endif
+
 
 /***************************************************************************************************
 **    global variables
@@ -85,8 +89,11 @@
 ** input data only, not the safe packet), global used due to performance reasons
 ** formerly aicDataStackSpdu_sTxSpduInData
 */
+#ifdef RFID_ACTIVE
+volatile AICMSGDEF_PS_INPUT_DATA_STRUCT aicMgrTx_s_IoVal = {0x00u, 0x00u, 0x00u, 0x00uL};
+#else
 volatile AICMSGDEF_PS_INPUT_DATA_STRUCT aicMgrTx_s_IoVal = {0x00u, 0x00u, 0x00u};
-
+#endif
 /***************************************************************************************************
 **    static constants, types, macros, variables
 ***************************************************************************************************/
@@ -358,7 +365,9 @@ void aicMgrTx_SampleIoData (void)
   aicMgrTx_s_IoVal.u8DiQualifiers = (UINT8)0u;
   /* all DO qualifiers to "0" (error state) */
   aicMgrTx_s_IoVal.u8DoQualifiers = (UINT8)0u;
-
+#ifdef RFID_ACTIVE
+  aicMgrTx_s_IoVal.u32_rfidInfo = RFID_InfoGet();
+#endif
   /************************************************/
   /* get DI state, see [SRS_2025] */
   /************************************************/
@@ -473,6 +482,9 @@ void aicMgrTx_ResetIoData (void)
   aicMgrTx_s_IoVal.u8DiQualifiers = (UINT8)0u;
   /* all DO qualifiers to "0" (error state) */
   aicMgrTx_s_IoVal.u8DoQualifiers = (UINT8)0u;
+#ifdef RFID_ACTIVE
+  aicMgrTx_s_IoVal.u32_rfidInfo = 0uL;
+#endif
 
   /* all SafeBound values to "FALSE" */
   doSafeBoundSS1t_SetSafeBoundVal((UINT8)0u, (BOOL)FALSE);

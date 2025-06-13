@@ -180,7 +180,11 @@
     _
 (see [SRS_2051], [SRS_2063])
 */
+#ifdef RFID_ACTIVE
+#define CSOS_cfg_LONG_FORMAT_MAX_LENGTH    (3U + 4u)
+#else
 #define CSOS_cfg_LONG_FORMAT_MAX_LENGTH    3U
+#endif
 
 
 /** CSOS_cfg_NUM_OF_SV_CLIENTS:

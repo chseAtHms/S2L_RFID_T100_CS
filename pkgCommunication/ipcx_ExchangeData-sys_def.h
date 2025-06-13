@@ -38,7 +38,11 @@
 /*!< Size of the IPC-Tgm-Header, the header consists of the ID. */
 #define IPCXSYS_SIZEOF_HEADER       IPCXSYS_SIZEOF_ID                
 /*!< Maximal size of the payload of the telegram. (see [SRS_2169]) */
+#ifdef RFID_ACTIVE
+#define IPCXSYS_SIZEOF_MAX_PAYLOAD  ( ( UINT8 ) 12u + 4u)
+#else
 #define IPCXSYS_SIZEOF_MAX_PAYLOAD  ( ( UINT8 ) 12u )                
+#endif               
 /*!< Size of the CRC (see [SRS_2169]). */
 #define IPCXSYS_SIZEOF_CRC          ( ( UINT8 ) 1u )                 
 /*!< Size of the Footer, it consists of the CRC. */

@@ -70,7 +70,11 @@
 
 /* Defines the maximum number of bytes that can be transferred via USART1 (RX and TX). */
 /* Here: 12 bytes payload + 2 byte header (ID, CRC), double transmission */
+#ifdef RFID_ACTIVE
+#define SERIAL_USART1_MAX_DATA_LENGTH  ( (12 + 4 + 2) * 2 )
+#else
 #define SERIAL_USART1_MAX_DATA_LENGTH  ( 28u )
+#endif
 
 /*******************************************************************************
 **

@@ -526,7 +526,14 @@ void spduIn_PrepIpcIo (UINT32 u32_addInfo, const UINT8* au8_ioData)
     s_SafeTgmIpcTx.u8_dataTgm[4] = au8_ioData[8];
     s_SafeTgmIpcTx.u8_dataTgm[5] = au8_ioData[10];
     s_SafeTgmIpcTx.u8_dataTgm[6] = au8_ioData[12];
+#ifdef RFID_ACTIVE
+    s_SafeTgmIpcTx.u8_dataTgm[7] = au8_ioData[14];
+    s_SafeTgmIpcTx.u8_dataTgm[8] = au8_ioData[16];
+    s_SafeTgmIpcTx.u8_dataTgm[9] = au8_ioData[18];
+    s_SafeTgmIpcTx.u8_dataTgm[10] = au8_ioData[20];
+#endif    
     /*lint +esym(960, 17.4)*/
+
     
     /* Attention: Enable IRQs again */
     __enable_irq();
@@ -557,6 +564,12 @@ void spduIn_PrepIpcIo (UINT32 u32_addInfo, const UINT8* au8_ioData)
     s_SafeTgmIpcTx.u8_dataTgm[4] = au8_ioData[9];
     s_SafeTgmIpcTx.u8_dataTgm[5] = au8_ioData[11];
     s_SafeTgmIpcTx.u8_dataTgm[6] = au8_ioData[13];
+#ifdef RFID_ACTIVE
+    s_SafeTgmIpcTx.u8_dataTgm[7] = au8_ioData[15];
+    s_SafeTgmIpcTx.u8_dataTgm[8] = au8_ioData[17];
+    s_SafeTgmIpcTx.u8_dataTgm[9] = au8_ioData[19];
+    s_SafeTgmIpcTx.u8_dataTgm[10] = au8_ioData[21];
+#endif
     /*lint +esym(960, 17.4)*/
     
     /* Attention: Enable IRQs again */
@@ -807,6 +820,16 @@ STATIC void setTgmIo(void)
     spduIn_s_Paket.au8_data[11] = s_SafeTgmIpcRx.u8_dataTgm[5];
     spduIn_s_Paket.au8_data[12] = s_SafeTgmIpcTx.u8_dataTgm[6];
     spduIn_s_Paket.au8_data[13] = s_SafeTgmIpcRx.u8_dataTgm[6];
+#ifdef RFID_ACTIVE
+    spduIn_s_Paket.au8_data[14] = s_SafeTgmIpcTx.u8_dataTgm[7];
+    spduIn_s_Paket.au8_data[15] = s_SafeTgmIpcRx.u8_dataTgm[7];
+    spduIn_s_Paket.au8_data[16] = s_SafeTgmIpcTx.u8_dataTgm[8];
+    spduIn_s_Paket.au8_data[17] = s_SafeTgmIpcRx.u8_dataTgm[8];
+    spduIn_s_Paket.au8_data[18] = s_SafeTgmIpcTx.u8_dataTgm[9];
+    spduIn_s_Paket.au8_data[19] = s_SafeTgmIpcRx.u8_dataTgm[9];
+    spduIn_s_Paket.au8_data[20] = s_SafeTgmIpcTx.u8_dataTgm[10];
+    spduIn_s_Paket.au8_data[21] = s_SafeTgmIpcRx.u8_dataTgm[10];
+#endif
     /*lint +esym(960, 17.4)*/
   }
   /* else if running on safety controller 2 */
@@ -830,6 +853,16 @@ STATIC void setTgmIo(void)
     spduIn_s_Paket.au8_data[11] = s_SafeTgmIpcTx.u8_dataTgm[5];
     spduIn_s_Paket.au8_data[12] = s_SafeTgmIpcRx.u8_dataTgm[6];
     spduIn_s_Paket.au8_data[13] = s_SafeTgmIpcTx.u8_dataTgm[6];
+#ifdef RFID_ACTIVE
+    spduIn_s_Paket.au8_data[14] = s_SafeTgmIpcRx.u8_dataTgm[7];
+    spduIn_s_Paket.au8_data[15] = s_SafeTgmIpcTx.u8_dataTgm[7];
+    spduIn_s_Paket.au8_data[16] = s_SafeTgmIpcRx.u8_dataTgm[8];
+    spduIn_s_Paket.au8_data[17] = s_SafeTgmIpcTx.u8_dataTgm[8];
+    spduIn_s_Paket.au8_data[18] = s_SafeTgmIpcRx.u8_dataTgm[9];
+    spduIn_s_Paket.au8_data[19] = s_SafeTgmIpcTx.u8_dataTgm[9];
+    spduIn_s_Paket.au8_data[20] = s_SafeTgmIpcRx.u8_dataTgm[10];
+    spduIn_s_Paket.au8_data[21] = s_SafeTgmIpcTx.u8_dataTgm[10];
+#endif
     /*lint +esym(960, 17.4)*/
   }
   /* else: variable error */

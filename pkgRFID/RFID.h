@@ -83,7 +83,7 @@
  *  (see [SAC_23])
 */
 
-#define RFID_MAX_FAILURE_COUNT      2u
+#define RFID_MAX_FAILURE_COUNT      3u
 
 /* Timeouts for RFID operations */
 // t100 time slice is ca 100 us

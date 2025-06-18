@@ -335,6 +335,7 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_UID:
      {
+        
         UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readUid.u32_cur;
         UINT8 dma_rx_len = RFID_EXPEC_RES_SF_LEN - RFID_DMA_CHANNEL_RX->CNDTR;
 
@@ -363,6 +364,7 @@ void RFID_Reader_Boot(void)
             {
                 // No tag detected, retry reading
                 e_rfidAccessState = TX_READ_UID;
+                u32_RfidInfo = 0uL; // Reset RFID info
             }
             else
             {

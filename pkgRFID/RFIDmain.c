@@ -335,7 +335,6 @@ void RFID_Reader_Boot(void)
      }
      case RX_READ_UID:
      {
-        
         UINT32 u32_elapsed = timerHAL_GetSystemTime3() - s_TimeDurations.s_readUid.u32_cur;
         UINT8 dma_rx_len = RFID_EXPEC_RES_SF_LEN - RFID_DMA_CHANNEL_RX->CNDTR;
 
@@ -934,9 +933,9 @@ STATIC UINT8 RFID_CheckTagRecordFields(void)
   UINT8 i;
   for (i = 0; i < 4; i++)
   {
-    u32_RfidInfo |= ((UINT32)s_rfidTagRecordEven.au8_tag_uid[i + 4]) << (8 * (3 - i));
+    /* switch the order of the bytes */
+    u32_RfidInfo |= ((UINT32)s_rfidTagRecordEven.au8_s2l_id[i]) << (8 * i);
   }
-  
   /* Search for new tag again */
   return RFID_OK;
 }

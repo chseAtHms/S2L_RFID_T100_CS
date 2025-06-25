@@ -54,7 +54,7 @@
 #if (CFG_TEMPERATURE_SENSOR_DIGITAL == TRUE)
   #define STHANLOC_NUMBER_OF_TESTCYCLES  ((UINT32)0x0006977Bu)
 #else
-  #define STHANLOC_NUMBER_OF_TESTCYCLES  ((UINT32)0x0006977Cu)
+  #define STHANLOC_NUMBER_OF_TESTCYCLES  ((UINT32)0x000708F0u)
 #endif
 
 /*! This constant defines the timeout for the selftests, the time is in

@@ -269,6 +269,9 @@ UINT8 globFail_SafetyHandler (GLOB_FAILCODE_ENUM eFailCode)
    sAicErrorTgm.sIoInData.u8DiData       = 0u;
    sAicErrorTgm.sIoInData.u8DiQualifiers = 0u;
    sAicErrorTgm.sIoInData.u8DoQualifiers = 0u;
+#ifdef RFID_ACTIVE
+    sAicErrorTgm.sIoInData.u32_rfidInfo = 0uL;
+#endif 
    sAicErrorTgm.sIoOutData.u8DoVal       = 0u;
    sAicErrorTgm.sIoOutData.u8DiErrRst    = 0u;
    sAicErrorTgm.sIoOutData.u8DoErrRst    = 0u;

@@ -117,8 +117,8 @@ UINT8 u8_rfidFailureCount = 0u;
 ** cycle. The odd record will be the even record + 1. Record comibination 
 ** will cange in the next reading cycle. 
 */
-UINT8 u8_SequenceNumber = 6u;
-UINT8 u8_OddSequenceNumber = 7u;
+UINT8 u8_SequenceNumber = 0u;
+UINT8 u8_OddSequenceNumber = 1u;
 
 
 t_RFID_TAG_DATA s_rfidTagRecordEven;
@@ -344,7 +344,7 @@ void RFID_Reader_Boot(void)
      case TX_READ_UID:
      {
         /* Determine the current sequence number for reading records */
-        //RFID_DetermineSequenceNumber();
+        RFID_DetermineNextRecords();
         TIMER_START(s_readUid);
         RFID_FrameTxSingleReadFixCode();
         RFID_FrameRxInit(RFID_EXPEC_RES_SF_LEN);
@@ -1652,7 +1652,7 @@ void delay_ms(uint32_t ms)
  **************************************************************************************************/
 STATIC void RFID_DetermineNextRecords(void)
 {
-  if ( u8_SequenceNumber >= 3)
+  if ( u8_SequenceNumber >= 6)
   {
     u8_SequenceNumber = 0; // Reset sequence number to 0
     u8_OddSequenceNumber = 1; // Reset odd sequence number to 1

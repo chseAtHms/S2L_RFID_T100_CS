@@ -112,7 +112,11 @@ t_RFID_TAG_READ_STATE e_rfidAccessState;
 t_RFID_FAILURE e_rfidLastFailure = RFID_FAIL_NONE;
 UINT8 u8_rfidFailureCount = 0u;
 
-/* Stores the current even sequence number, odd will be the next one */
+/* 
+** Stores the two records which will be read from the RFID tag in this
+** cycle. The odd record will be the even record + 1. Record comibination 
+** will cange in the next reading cycle. 
+*/
 UINT8 u8_SequenceNumber = 6u;
 UINT8 u8_OddSequenceNumber = 7u;
 
@@ -155,13 +159,14 @@ STATIC UINT8 RFID_ParseRecord(t_RFID_RAW_DATA *s_rfidRawData, t_RFID_TAG_DATA *s
 STATIC UINT8 RFID_ResLength(const UINT8 *buffer, UINT8 maxLength);
 STATIC UINT32 RFID_CalculateCRC(t_RFID_TAG_DATA *s_rfidTagData);
 STATIC UINT8 RFID_CheckTagRecordFields(void);
+STATIC UINT8 RFID_CheckS2LID(void);
 /* Utility functions */
 STATIC void uartInit(void);
 STATIC void uartInitDmaTx(void);
 STATIC void uartInitDmaRx(void);
 STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
 STATIC void RFID_FrameRxInit(UINT8 u8_len);
-STATIC void RFID_DetermineSequenceNumber(void);
+STATIC void RFID_DetermineNextRecords(void);
 STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure);
 STATIC void timerStart(t_TIME *ps_timer);
 STATIC void timerStop(t_TIME *ps_timer);
@@ -562,14 +567,21 @@ void RFID_Reader_Boot(void)
      }
      case CHECK_TAG_RECORDS:
      {
-        if (RFID_CheckTagRecordFields() == RFID_OK)
+        if (RFID_CheckS2LID() == RFID_OK)
         {
-          e_rfidAccessState = TX_READ_UID;
+          if (RFID_CheckTagRecordFields() == RFID_OK)
+          {
+            e_rfidAccessState = TX_READ_UID;
+          }
+          else
+          {
+            RFID_HandleFailure(RFID_FAIL_UNKNOWN);
+            //GLOBFAIL_SAFETY_HANDLER(GLOB_FAILCODE_RFID_FAIL, GLOBFAIL_ADDINFO_FILE(1u));
+          }
         }
         else
         {
-          RFID_HandleFailure(RFID_FAIL_UNKNOWN);
-          //GLOBFAIL_SAFETY_HANDLER(GLOB_FAILCODE_RFID_FAIL, GLOBFAIL_ADDINFO_FILE(1u));
+          RFID_HandleFailure(RFID_FAIL_S2L_ID_VERIFY);
         }
         break;
      }
@@ -1015,6 +1027,57 @@ STATIC UINT8 RFID_CheckTagRecordFields(void)
   }
   /* Search for new tag again */
   return RFID_OK;
+}
+
+/**************************************************************************************************
+**
+**  Function:
+**    UINT8 RFID_CheckS2LID(void)
+**
+**  Description:
+**    This function checks the S2L ID of the read records from the RFID tag.
+**    It calculates the complement S2L ID from the odd-numbered record and compares it
+**    with the S2L ID in the even-numbered record to verify integrity.
+**
+**    Note: The record with an even sequence number contains the original Tag ID.
+**          The record with an odd sequence number contains the bitwise complement of the Tag ID.
+** See also:
+**    -
+**  Parameters:
+**    -
+**  Return value:
+**    RFID_OK (0) - S2L ID is valid
+**    RFID_FAIL_S2L_ID_VERIFY - S2L ID is invalid
+*/
+STATIC UINT8 RFID_CheckS2LID(void)
+{
+  UINT8 firstUsedIndex = RFID_S2L_ID_LEN;
+
+  // Find the first non-zero byte in the complement S2L ID (odd record)
+  for (UINT8 i = 0; i < RFID_S2L_ID_LEN; i++)
+  {
+    if (s_rfidTagRecordOdd.au8_s2l_id[i] != 0x00)
+    {
+      firstUsedIndex = i;
+      break;
+    }
+  }
+
+  // If all bytes are 0x00, the ID is considered invalid
+  if (firstUsedIndex == RFID_S2L_ID_LEN)
+    return RFID_FAIL_S2L_ID_VERIFY;
+
+  // Compare each relevant byte of the original and complemented S2L ID
+  for (UINT8 i = firstUsedIndex; i < RFID_S2L_ID_LEN; i++)
+  {
+    UINT8 even = s_rfidTagRecordEven.au8_s2l_id[i];   // Original S2L ID byte
+    UINT8 odd  = s_rfidTagRecordOdd.au8_s2l_id[i];    // Complement S2L ID byte
+
+    if ((UINT8)(~odd) != even)
+      return RFID_FAIL_S2L_ID_VERIFY; // Mismatch found
+  }
+
+  return RFID_OK; // All checks passed
 }
 
 /**************************************************************************************************
@@ -1572,10 +1635,11 @@ void delay_ms(uint32_t ms)
 /**************************************************************************************************
  **
  **  Function:
- **    void RFID_DetermineSequenceNumber(void)
+ **    void RFID_DetermineNextRecords(void)
  **
  **  Description:
- **    This function determines the even sequence number which is used for the next read operation. 
+ **    This function determines the even record/sequence number which is used for the next 
+ **    read operation. 
  **
  **  See also:
  **    -
@@ -1586,7 +1650,7 @@ void delay_ms(uint32_t ms)
  **  Return value:
  **    -
  **************************************************************************************************/
-STATIC void RFID_DetermineSequenceNumber(void)
+STATIC void RFID_DetermineNextRecords(void)
 {
   if ( u8_SequenceNumber >= 3)
   {
@@ -1636,6 +1700,7 @@ STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure)
     case RFID_FAIL_ODD_REC_TIMEOUT:
     case RFID_FAIL_ODD_REC_VERIFY:
     case RFID_FAIL_ODD_REC_CRC_ERROR:
+    case RFID_FAIL_S2L_ID_VERIFY:
       /* Reset the access state to retry reading the UID */
       e_rfidAccessState = TX_READ_UID;
       break;

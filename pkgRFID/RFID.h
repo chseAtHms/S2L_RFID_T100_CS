@@ -26,6 +26,7 @@
 /* Baudrate constants for the RFID reader */   
 #define RFID_38400_BAUDRATE         38400u  
 #define RFID_115200_BAUD            115200u
+/* RFID Protocol Constants */
 
 /* RFID Tag Status Codes
   * 
@@ -39,10 +40,9 @@
 #define RFID_NO_TAG                 0x35u
 #define RFID_HW_ERROR               6u
 
-/* RFID Protocol Constants 
- * 
- */
 #define RFID_ETX                    0x03
+
+
 
 #define RFID_RAW_MAX_LEN            70u
 #define RFID_UID_LEN                8u
@@ -99,11 +99,14 @@ typedef enum {
   RFID_FAIL_BOOT_READER_TIMEOUT,
   RFID_FAIL_UID_TIMEOUT,
   RFID_FAIL_UID_VERIFY,
+  RFID_FAIL_INVALID_SEQ_NUM,
   RFID_FAIL_EVEN_REC_TIMEOUT,
   RFID_FAIL_EVEN_REC_VERIFY,
+  RFID_FAIL_EVEN_REC_SEQ_NUM_ERROR,
   RFID_FAIL_EVEN_REC_CRC_ERROR,
   RFID_FAIL_ODD_REC_TIMEOUT,
   RFID_FAIL_ODD_REC_VERIFY,
+  RFID_FAIL_ODD_REC_SEQ_NUM_ERROR,
   RFID_FAIL_ODD_REC_CRC_ERROR,
   RFID_FAIL_UNKNOWN,
 } t_RFID_FAILURE;

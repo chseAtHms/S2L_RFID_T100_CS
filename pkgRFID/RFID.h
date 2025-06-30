@@ -84,6 +84,8 @@
 */
 
 #define RFID_MAX_FAILURE_COUNT      3u
+#define RFID_TICKS_PER_HOUR          0xD4AD5A2E // 1.0091e-6 s
+#define RFID_TICKS_PER_HOUR_TEST     0x119FEF23 // 1.0091e-6 s
 
 /* Timeouts for RFID operations */
 // t100 time slice is ca 100 us
@@ -146,7 +148,7 @@ typedef enum {
   CHECK_REC_ODD,
   CHECK_TAG_RECORDS,
   STATE_SUCCESS,
-  STATE_FAILURE,
+  RFID_FAIL_SAFE,
 } t_RFID_TAG_READ_STATE;
 
 

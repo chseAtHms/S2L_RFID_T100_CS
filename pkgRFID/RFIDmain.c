@@ -88,6 +88,7 @@ typedef struct
 
 typedef struct
 {
+  t_TIME s_RFIDRunTime;
   t_TIME s_BootFirmware;
   t_TIME s_readUid;
   t_TIME s_readRecord;
@@ -95,6 +96,7 @@ typedef struct
 
 t_TIME_DURATIONS s_TimeDurations;
 
+UINT32 u32_elapsedRunTime = 0uL;
 /* Transmit and Receive DMA buffer which are used from the DMA. These buffers are
 ** attached the DMA buffer section in the RAM. This is a specified section in the
 ** RAM just for DMA buffers. It is defined in the scatter file.
@@ -146,6 +148,7 @@ STATIC void RFID_FrameTxReadRecord_4(void);
 STATIC void RFID_FrameTxReadRecord_5(void);
 STATIC void RFID_FrameTxReadRecord_6(void);
 STATIC void RFID_FrameTxReadRecord_7(void);
+STATIC void RFID_FrameTxReadFullMemory(void);
 
 /* RFID Response verification  */
 STATIC UINT8 RFID_VerifySWVersion(const UINT8 *buffer);
@@ -167,6 +170,7 @@ STATIC void uartInitDmaRx(void);
 STATIC void RFID_FrameTxTrigger(UINT8 u8_len);
 STATIC void RFID_FrameRxInit(UINT8 u8_len);
 STATIC void RFID_DetermineNextRecords(void);
+STATIC void RFID_PurgeOutdatedTagData(void);
 STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure);
 STATIC void timerStart(t_TIME *ps_timer);
 STATIC void timerStop(t_TIME *ps_timer);
@@ -195,6 +199,7 @@ STATIC UINT32 CRC32(const UINT8* data, UINT8 length);
 **************************************************************************************************/
 void RFID_Init(void)
 {
+  TIMER_START(s_RFIDRunTime);
   /* Initialize the RFID reader */
   if (cfgSYS_GetControllerID() == SAFETY_CONTROLLER_1)
   {
@@ -267,7 +272,6 @@ void RFID_InfoSet(UINT32 u32_rfidInfo)
 **************************************************************************************************/
 void RFID_Reader_Boot(void)
 {
-  //STATIC UINT32 u32_funcCallCount = 0u;
   switch (e_rfidAccessState)
   {
     case TX_BOOT_FIRMWARE:    
@@ -330,13 +334,23 @@ void RFID_Reader_Boot(void)
 **************************************************************************************************/
  void RFID_ReadTag(void)
  {
+
    t_RFID_RAW_DATA s_rfidRawData;
    t_RFID_TAG_DATA s_rfidTagData;
 
+   u32_elapsedRunTime = timerHAL_GetSystemTime3() - s_TimeDurations.s_RFIDRunTime.u32_cur;
+   /* Reset Failercount and runtime after 1 hour*/
+   if (u32_elapsedRunTime > RFID_TICKS_PER_HOUR_TEST)
+   {
+      TIMER_STOP(s_RFIDRunTime);
+      u8_rfidFailureCount = 0u;
+      u32_elapsedRunTime = 0uL;
+      TIMER_START(s_RFIDRunTime);
+   }
    /* Check if failure count exceeds maximum allowed */
    if (u8_rfidFailureCount  > RFID_MAX_FAILURE_COUNT)
    {
-      e_rfidAccessState = STATE_FAILURE;
+      e_rfidAccessState = RFID_FAIL_SAFE;
    }
 
    switch (e_rfidAccessState)
@@ -381,7 +395,9 @@ void RFID_Reader_Boot(void)
             {
                 // No tag detected, retry reading
                 e_rfidAccessState = TX_READ_UID;
-                u32_RfidInfo = 0uL; // Reset RFID info
+                // Reset the RFID information
+                u32_RfidInfo = 0uL; 
+                RFID_PurgeOutdatedTagData();
             }
             else
             {
@@ -397,6 +413,9 @@ void RFID_Reader_Boot(void)
           {
             // Timeout occurred, go back to retry reading UID
             e_rfidAccessState = TX_READ_UID;
+            /* Reset the RFID information */
+            u32_RfidInfo = 0uL;
+            RFID_PurgeOutdatedTagData();
           }
 
         }
@@ -459,6 +478,9 @@ void RFID_Reader_Boot(void)
         {
           // Timeout occurred, go back to retry reading UID
           e_rfidAccessState = TX_READ_UID;
+          /* Reset the RFID information */
+          u32_RfidInfo = 0uL;
+          RFID_PurgeOutdatedTagData();
         }
       }
       break;
@@ -541,6 +563,9 @@ void RFID_Reader_Boot(void)
           {
             //Timeout occurred, go to retry reading UID
             e_rfidAccessState = TX_READ_UID;
+            /* Reset the RFID information */
+            u32_RfidInfo = 0uL;
+            RFID_PurgeOutdatedTagData();
           }
         }
         break;
@@ -571,12 +596,12 @@ void RFID_Reader_Boot(void)
         {
           if (RFID_CheckTagRecordFields() == RFID_OK)
           {
+            RFID_PurgeOutdatedTagData();
             e_rfidAccessState = TX_READ_UID;
           }
           else
           {
             RFID_HandleFailure(RFID_FAIL_UNKNOWN);
-            //GLOBFAIL_SAFETY_HANDLER(GLOB_FAILCODE_RFID_FAIL, GLOBFAIL_ADDINFO_FILE(1u));
           }
         }
         else
@@ -585,9 +610,10 @@ void RFID_Reader_Boot(void)
         }
         break;
      }
-     case STATE_FAILURE:
+     case RFID_FAIL_SAFE:
      {
       /* Set global T100 fail safe */
+      //GLOBFAIL_SAFETY_HANDLER(GLOB_FAILCODE_RFID_FAIL, GLOBFAIL_ADDINFO_FILE(1u));
      }
      default:
      {
@@ -1564,7 +1590,45 @@ void delay_ms(uint32_t ms)
    RFID_FrameTxTrigger(RFID_CMD_SR_LEN);
  }
 
+/**************************************************************************************************
+**
+** Function:
+**   void RFID_FrameTxReadFullMemory(void)
+**
+** Description:
+**  This function sends the Read Full Memory command to read the complete memory of the RFID tag.
+**  This function can be used to to read all records which are secured by the memory CRC which is 
+**  stored after the last record.
+**
+** See also:
+**   -
+** Parameters:
+**   -
+** Return value:
+**   -
+**************************************************************************************************/
+STATIC void RFID_FrameTxReadFullMemory(void)
+{
 
+   /* Single Read Words command */
+   au8_rfidDmaBufferTx[0] = 0x53;
+   au8_rfidDmaBufferTx[1] = 0x52;
+   /* Word address */
+   au8_rfidDmaBufferTx[2] = 0x30; 
+   au8_rfidDmaBufferTx[3] = 0x30; 
+   au8_rfidDmaBufferTx[4] = 0x30; 
+   au8_rfidDmaBufferTx[5] = 0x30; 
+   /* Number of words */
+   au8_rfidDmaBufferTx[6] = 0x31;
+   au8_rfidDmaBufferTx[7] = 0x39;
+   /* CHECKSUM */
+   au8_rfidDmaBufferTx[8] = 0xCF; 
+   /* ETX */
+   au8_rfidDmaBufferTx[9] = 0x03;
+
+   /* Send the frame */
+   RFID_FrameTxTrigger(RFID_CMD_SR_LEN);
+ }
 /**************************************************************************************************
  **
  **  Function:
@@ -1639,7 +1703,7 @@ void delay_ms(uint32_t ms)
  **
  **  Description:
  **    This function determines the even record/sequence number which is used for the next 
- **    read operation. 
+ **    read operation. The last record read is record 6, so the next record will be 0. 
  **
  **  See also:
  **    -
@@ -1664,6 +1728,53 @@ STATIC void RFID_DetermineNextRecords(void)
   }
 }
 
+/**************************************************************************************************
+ **
+ **  Function:
+ **    void RFID_PurgeOutdatedTagData(void)
+ **
+ **  Description:
+ **    This function resets the tag data structure for both even and odd record. To remove 
+ **    outdated or invalid data.
+ **
+ **  See also:
+ **    -
+ **
+ **  Parameters:
+ **    -
+ **
+ **  Return value:
+ **    -
+ **************************************************************************************************/
+STATIC void RFID_PurgeOutdatedTagData(void)
+{
+  /* Rest the sequence number */
+  s_rfidTagRecordEven.u8_seq_num = 0xFF; 
+  s_rfidTagRecordOdd.u8_seq_num = 0xFF; 
+
+  UINT8 i;
+  /* Reset Tag UID */
+  for (i = 0; i < RFID_UID_LEN; i++)
+  {
+    s_rfidTagRecordEven.au8_tag_uid[i] = 0xFF; 
+    s_rfidTagRecordOdd.au8_tag_uid[i] = 0xFF; 
+  }
+
+  /* Reset S2L ID */
+  for (i = 0; i < RFID_S2L_ID_LEN; i++)
+  {
+    s_rfidTagRecordEven.au8_s2l_id[i] = 0xFF; 
+    s_rfidTagRecordOdd.au8_s2l_id[i] = 0xFF; 
+  }
+
+  /* Reset Record CRC */
+  for (i = 0; i < RFID_RECORD_CRC_LEN; i++)
+  {
+    s_rfidTagRecordEven.au8_r_crc[i] = 0xFF; 
+    s_rfidTagRecordOdd.au8_r_crc[i] = 0xFF; 
+  } 
+}
+
  /**************************************************************************************************
  **
  **  Function:
@@ -1685,7 +1796,10 @@ STATIC void RFID_DetermineNextRecords(void)
  **************************************************************************************************/
 STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure)
 {
-  u32_RfidInfo = 0uL; // Reset RFID info
+  /* Reset the RFID info */
+  RFID_PurgeOutdatedTagData();
+  u32_RfidInfo = 0uL;
+  /* Increment the failure count and set the last failure type */
   u8_rfidFailureCount++;
   e_rfidLastFailure = e_failure;
 
@@ -1711,7 +1825,7 @@ STATIC void RFID_HandleFailure(t_RFID_FAILURE e_failure)
     case RFID_FAIL_UNKNOWN:
   default:
     /* Global failure */
-    e_rfidAccessState = STATE_FAILURE;
+    e_rfidAccessState = RFID_FAIL_SAFE;
     break;
   }
 }
